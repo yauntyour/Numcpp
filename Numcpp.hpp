@@ -23,7 +23,7 @@ public:
         {
             for (size_t i = 0; i < this->row; i++)
             {
-                for (size_t j = 0; j < this; j++)
+                for (size_t j = 0; j < this->col; j++)
                 {
                     this->matrix[i][j] = other.matrix[i][j];
                 }

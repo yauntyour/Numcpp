@@ -52,7 +52,6 @@ public:
         if (other.row != this->row || other.col != this->col)
         {
             throw "Invalid Matrix";
-            return 0;
         }
         else
         {

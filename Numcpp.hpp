@@ -1,14 +1,15 @@
 #include <iostream>
-typedef unsigned long long size_t;
+#include <stdlib.h>
 template <typename dataType>
 class Numcpp
 {
 private:
-    size_t row, col;
     dataType **matrix;
 
 public:
+    size_t row, col;
     Numcpp(const size_t _row, const size_t _col);
+    Numcpp(const size_t _row, const size_t _col, dataType value);
     Numcpp(const Numcpp<dataType> &other);
     /*
     operators
@@ -135,14 +136,14 @@ public:
         }
         else
         {
-            Numcpp<dataType> result(this->row, other.col);
+            Numcpp<dataType> result(this->row, other.col, 0);
             for (size_t i = 0; i < this->row; i++)
             {
-                for (size_t k = 0; k < other.col; k++)
+                for (size_t j = 0; j < other.col; j++)
                 {
-                    for (size_t j = 0; j < this->col; j++)
+                    for (size_t k = 0; k < this->col; k++)
                     {
-                        result.matrix[i][j] = this->matrix[i][j] * other.matrix[j][k];
+                        result[i][j] += (this->matrix[i][k] * other.matrix[k][j]);
                     }
                 }
             }
@@ -168,7 +169,9 @@ public:
         for (int i = 0; i < m.row; ++i)
         {
             for (int j = 0; j < m.col; ++j)
-                stream << m.matrix[i][j] << (j == m.col - 1 ? '\n' : ' ');
+            {
+                stream << (T)(m.matrix[i][j]) << (j == m.col - 1 ? '\n' : ' ');
+            }
         }
         return stream;
     }
@@ -192,6 +195,28 @@ Numcpp<T>::Numcpp(const size_t _row, const size_t _col)
             for (size_t j = 0; j < _col; j++)
             {
                 matrix[i][j] = (T)1;
+            }
+        }
+    }
+}
+template <typename T>
+inline Numcpp<T>::Numcpp(const size_t _row, const size_t _col, T value)
+{
+    if (_row == 0 || _col == 0)
+    {
+        throw "Invalid creation";
+    }
+    else
+    {
+        row = _row;
+        col = _col;
+        matrix = new T *[_row];
+        for (size_t i = 0; i < _row; i++)
+        {
+            matrix[i] = new T[_col];
+            for (size_t j = 0; j < _col; j++)
+            {
+                matrix[i][j] = value;
             }
         }
     }

@@ -1,5 +1,7 @@
 #include <iostream>
 #include <stdlib.h>
+#include <complex>
+#include <math.h>
 namespace units
 {
     template <typename T>
@@ -29,7 +31,6 @@ namespace units
             }
         }
     }
-
     template <typename T>
     void fft(std::complex<T> **x, size_t size, std::complex<T> **X, int inv)
     {
@@ -62,8 +63,7 @@ namespace units
             }
         }
     }
-} // namespace units
-
+}; // namespace units
 template <typename dataType>
 class Numcpp
 {
@@ -272,7 +272,7 @@ public:
         stream << '(' << m.row << ',' << m.col << ')' << "[\n";
         for (int i = 0; i < m.row; ++i)
         {
-            stream << "    [";
+            stream << "    [" << i << "][";
             for (int j = 0; j < m.col; ++j)
             {
                 stream << (T)(m.matrix[i][j]) << (j == m.col - 1 ? "]\n" : " , ");
@@ -322,7 +322,7 @@ Numcpp<T> operator>(const oper_object<T> &oper, const Numcpp<T> &B)
             {
                 for (size_t k = 0; k < oper.col; k++)
                 {
-                    result.matrix[i * (B.col - 1) + j][k] = oper.function_object((oper.matrix)[j][k], B.matrix[k][i]);
+                    result.matrix[j + i * B.row][k] = oper.function_object((oper.matrix)[j][k], B.matrix[k][i]);
                 }
             }
         }

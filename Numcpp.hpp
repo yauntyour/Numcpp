@@ -3,10 +3,8 @@
 template <typename dataType>
 class Numcpp
 {
-private:
-    dataType **matrix;
-
 public:
+    dataType **matrix;
     size_t row, col;
     Numcpp(const size_t _row, const size_t _col);
     Numcpp(const size_t _row, const size_t _col, dataType value);
@@ -18,7 +16,7 @@ public:
     {
         if (other.row != this->row || other.col != this->col)
         {
-            throw "Invalid Matrix";
+            throw std::invalid_argument("Invalid Matrix");
         }
         else
         {
@@ -35,7 +33,7 @@ public:
     {
         if (other.row != this->row || other.col != this->col)
         {
-            throw "Invalid Matrix";
+            throw std::invalid_argument("Invalid Matrix");
         }
         else
         {
@@ -52,7 +50,7 @@ public:
     {
         if (other.row != this->row || other.col != this->col)
         {
-            throw "Invalid Matrix";
+            throw std::invalid_argument("Invalid Matrix");
         }
         else
         {
@@ -71,7 +69,7 @@ public:
     {
         if (other.row != this->row || other.col != this->col)
         {
-            throw "Invalid Matrix";
+            throw std::invalid_argument("Invalid Matrix");
         }
         else
         {
@@ -88,7 +86,7 @@ public:
     {
         if (other.row != this->row || other.col != this->col)
         {
-            throw "Invalid Matrix";
+            throw std::invalid_argument("Invalid Matrix");
             return 0;
         }
         else
@@ -132,7 +130,7 @@ public:
     {
         if (this->col != other.row)
         {
-            throw "Invalid Matrix";
+            throw std::invalid_argument("Invalid Matrix");
         }
         else
         {
@@ -166,17 +164,67 @@ public:
     template <typename T>
     friend std::ostream &operator<<(std::ostream &stream, const Numcpp<T> &m)
     {
+        stream << '(' << m.row << ',' << m.col << ')' << "[\n";
         for (int i = 0; i < m.row; ++i)
         {
+            stream << "    [";
             for (int j = 0; j < m.col; ++j)
             {
-                stream << (T)(m.matrix[i][j]) << (j == m.col - 1 ? '\n' : ' ');
+                stream << (T)(m.matrix[i][j]) << (j == m.col - 1 ? "]\n" : " , ");
             }
         }
+        stream << "]\n";
         return stream;
     }
 };
-
+// matrix special operate
+template <typename T>
+class oper_object
+{
+public:
+    size_t row, col;
+    T **matrix;
+    T(*function_object)
+    (T A, T B);
+    oper_object(const Numcpp<T> &A, T (*function_object)(T A, T B))
+    {
+        this->row = A.row;
+        this->col = A.col;
+        this->matrix = (A.matrix);
+        this->function_object = function_object;
+    };
+};
+template <typename T>
+oper_object<T> operator<(const Numcpp<T> &A, T (*function_object)(T A, T B))
+{
+    oper_object<T> oper(A, function_object);
+    return oper;
+}
+template <typename T>
+Numcpp<T> operator>(const oper_object<T> &oper, const Numcpp<T> &B)
+{
+    // A.col = B.row
+    if (oper.col != B.row)
+    {
+        throw std::invalid_argument("Invalid Matrix");
+    }
+    else
+    {
+        Numcpp<T> result(oper.row * B.col, B.row);
+        for (size_t i = 0; i < B.col; i++)
+        {
+            for (size_t j = 0; j < oper.row; j++)
+            {
+                for (size_t k = 0; k < oper.col; k++)
+                {
+                    result.matrix[i * (B.col - 1) + j][k] = oper.function_object((oper.matrix)[j][k], B.matrix[k][i]);
+                }
+            }
+        }
+        return result;
+    }
+}
+// defined in class functions
 template <typename T>
 Numcpp<T>::Numcpp(const size_t _row, const size_t _col)
 {
@@ -226,7 +274,7 @@ Numcpp<T>::Numcpp(const Numcpp<T> &other)
 {
     if (other.row == 0 || other.col == 0)
     {
-        throw "Invalid Matrix";
+        throw std::invalid_argument("Invalid Matrix");
     }
     else
     {
@@ -295,7 +343,7 @@ void Numcpp<T>::Hadamard_self(const Numcpp<T> &other)
 {
     if (other.row != this->row || other.col != this->col)
     {
-        throw "Invalid Matrix";
+        throw std::invalid_argument("Invalid Matrix");
     }
     else
     {
@@ -313,7 +361,7 @@ Numcpp<T> Numcpp<T>::Hadamard(const Numcpp<T> &other)
 {
     if (other.row != this->row || other.col != this->col)
     {
-        throw "Invalid Matrix";
+        throw std::invalid_argument("Invalid Matrix");
     }
     else
     {

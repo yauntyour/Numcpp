@@ -1,13 +1,17 @@
 #include <iostream>
 #include <math.h>
-
+#include <complex>
 #include "Numcpp.hpp"
 
-// 理论上模板要被同一个类型实例化
-#define nc_t long long
+//复数
+typedef std::complex<double> complex_double;
 
-void func(Numcpp<nc_t> &nc)
+// 理论上模板要被同一个类型实例化
+#define nc_t complex_double
+
+void generate(Numcpp<nc_t> &nc)
 {
+    srand(time(NULL));
     for (size_t i = 0; i < nc.row; i++)
     {
         for (size_t j = 0; j < nc.col; j++)
@@ -21,14 +25,25 @@ void func(Numcpp<nc_t> &nc)
     }
 }
 
+nc_t func(nc_t n, nc_t m)
+{
+    nc_t result = n * m;
+    return result;
+}
+
 int main(int argc, char const *argv[])
 {
     /*使用Numcpp<type> np(row,col)创建一个row * col的矩阵*/
     Numcpp<nc_t> n(4, 4), m(4, 4);
+
     /*矩阵中所有元素的默认值为1，也可以手动设置*/
     Numcpp<nc_t> c(6, 7, 3.0);
+    Numcpp<nc_t> e(6, 8);
+
+    /*广播操作*/
     n *= 2.0;
     m *= 3.0;
+
     try
     {
         // 矩阵乘法：
@@ -42,11 +57,17 @@ int main(int argc, char const *argv[])
         std::cout << result << "\n";
 
         // 生成正态分布的矩阵
-        func(c);
-        // 矩阵转置：
+        generate(c);
+        generate(e);
         std::cout << c << "\n";
+        std::cout << e << "\n";
+        // 矩阵转置：
         c.transposed();
         std::cout << c << "\n";
+
+        // 矩阵的特殊乘法：
+        Numcpp<nc_t> Out = c<func> e;
+        std::cout << Out << "\n";
     }
     catch (const std::exception &e)
     {

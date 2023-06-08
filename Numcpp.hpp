@@ -1,5 +1,69 @@
 #include <iostream>
 #include <stdlib.h>
+namespace units
+{
+    template <typename T>
+    void trans(std::complex<T> **x, size_t size_x)
+    {
+        int p = 0;
+        int a, b;
+        for (int i = 1; i < size_x; i *= 2)
+        {
+            p++; // 计算二进制位数
+        }
+        for (int i = 0; i < size_x; i++)
+        {
+            a = i;
+            b = 0;
+            for (int j = 0; j < p; j++)
+            {
+                b = (b << 1) + (a & 1); // b存储当前下标的回文值
+                a = a >> 1;
+            }
+            if (b > i) // 避免重复交换
+            {
+                std::complex<T> temp;
+                temp = (*x)[i];
+                (*x)[i] = (*x)[b];
+                (*x)[b] = temp;
+            }
+        }
+    }
+
+    template <typename T>
+    void fft(std::complex<T> **x, size_t size, std::complex<T> **X, int inv)
+    {
+        std::complex<T> *Wn = new std::complex<T>[size]; // 这里可以自己新建长度为size的数组
+        for (int i = 0; i < size; i++)
+        {
+            (*X)[i] = (*x)[i];
+            long double real = cos(-2 * M_PI * i / size);
+            long double img = inv * sin(-2 * M_PI * i / size);
+            Wn[i] = std::complex<T>(real, img); // 初始化Wn
+        }
+        std::complex<T> *p = (*X);
+        trans(&p, size); // 位反转置换
+        int t;
+        for (int m = 2; m <= size; m *= 2) // 小序列点数
+        {
+            for (int k = 0; k < size; k += m) // 小序列起始下标
+            {
+                for (int j = 0; j < m / 2; j++) // 小序列的DFT计算
+                {
+                    int index1 = k + j;
+                    int index2 = index1 + m / 2;
+                    t = j * size / m; // t是在完整序列中的下标，找到对应的旋转因子
+                    std::complex<T> temp1, temp2;
+                    temp2 = (*X)[index2] * Wn[t];
+                    temp1 = (*X)[index1];
+                    (*X)[index1] = temp1 + temp2; // Wn的性质
+                    (*X)[index2] = temp1 - temp2;
+                }
+            }
+        }
+    }
+} // namespace units
+
 template <typename dataType>
 class Numcpp
 {
@@ -160,6 +224,47 @@ public:
     void Hadamard_self(const Numcpp<dataType> &);
     Numcpp Hadamard(const Numcpp<dataType> &);
     ~Numcpp();
+    void ffted(int inv)
+    {
+        dataType **result = new dataType *[this->row];
+        for (size_t i = 0; i < this->row; i++)
+        {
+            result[i] = new dataType[this->col];
+        }
+
+        for (size_t i = 0; i < this->row; i++)
+        {
+            units::fft(this->matrix + i, this->col, result + i, inv);
+        }
+        for (size_t i = 0; i < this->row; i++)
+        {
+            for (size_t j = 0; j < this->col; j++)
+            {
+                if (inv < 0)
+                {
+                    this->matrix[i][j] = result[i][j];
+                    this->matrix[i][j] /= this->col;
+                }
+                else
+                {
+                    this->matrix[i][j] = result[i][j];
+                }
+            }
+        }
+    }
+    Numcpp fft(int inv)
+    {
+        Numcpp<dataType> result(this->row, this->col);
+        for (size_t i = 0; i < this->row; i++)
+        {
+            units::fft(this->matrix + i, this->col, result.matrix + i, inv);
+        }
+        if (inv < 0)
+        {
+            result *= (1 / this->col);
+        }
+        return result;
+    }
 
     template <typename T>
     friend std::ostream &operator<<(std::ostream &stream, const Numcpp<T> &m)

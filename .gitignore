@@ -1,2 +1,10 @@
 /.vscode
 /example.exe
+.ipynb_checkpoints/fft-checkpoint.ipynb
+start.bat
+fttest.exe
+fttest.cpp
+ffttest-2.exe
+ffttest-2.cpp
+fft.ipynb
+.gitignore

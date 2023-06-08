@@ -2,8 +2,7 @@
 #include <math.h>
 #include <complex>
 #include "Numcpp.hpp"
-
-//复数
+// 复数
 typedef std::complex<double> complex_double;
 
 // 理论上模板要被同一个类型实例化
@@ -66,8 +65,16 @@ int main(int argc, char const *argv[])
         std::cout << c << "\n";
 
         // 矩阵的特殊乘法：
-        Numcpp<nc_t> Out = c<func> e;
+        Numcpp<nc_t> Out = c<func> e; // 会创建一个新的矩阵
         std::cout << Out << "\n";
+
+        // 矩阵fft
+        std::cout << result << "\n";
+        result.ffted(1);
+        std::cout << result << "\n";
+        // ifft
+        result.ffted(-1);
+        std::cout << result << "\n";
     }
     catch (const std::exception &e)
     {

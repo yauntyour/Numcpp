@@ -73,7 +73,7 @@ int main(int argc, char const *argv[])
         std::cout << Out << "\n";
 
         // 函数数乘特殊乘法：
-        Numcpp<nc_t> act = c<sigmoid> NULL;
+        Numcpp<nc_t> act = result<sigmoid> NULL;
         std::cout << act << "\n";
 
         // 矩阵fft

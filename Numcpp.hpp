@@ -329,6 +329,20 @@ Numcpp<T> operator>(const oper_object<T> &oper, const Numcpp<T> &B)
         return result;
     }
 }
+template <typename T>
+Numcpp<T> operator>(const oper_object<T> &oper, void *data)
+{
+    Numcpp<T> result(oper.row, oper.col);
+    for (size_t i = 0; i < oper.row; i++)
+    {
+        for (size_t j = 0; j < oper.col; j++)
+        {
+            result[i][j] = oper.function_object((oper.matrix)[i][j], (T)0);
+        }
+    }
+    return result;
+}
+
 // defined in class functions
 template <typename T>
 Numcpp<T>::Numcpp(const size_t _row, const size_t _col)

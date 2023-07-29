@@ -73,6 +73,7 @@ public:
     Numcpp(const size_t _row, const size_t _col);
     Numcpp(const size_t _row, const size_t _col, dataType value);
     Numcpp(const Numcpp<dataType> &other);
+    Numcpp(const dataType **mat, const size_t _row, const size_t _col);
     /*
     operators
     */
@@ -151,7 +152,6 @@ public:
         if (other.row != this->row || other.col != this->col)
         {
             throw std::invalid_argument("Invalid Matrix");
-            return 0;
         }
         else
         {
@@ -185,6 +185,28 @@ public:
             for (size_t j = 0; j < this->col; j++)
             {
                 this->matrix[i][j] *= n;
+            }
+        }
+    }
+    Numcpp<dataType> operator/(dataType n)
+    {
+        Numcpp<dataType> result(this->row, this->col);
+        for (size_t i = 0; i < this->row; i++)
+        {
+            for (size_t j = 0; j < this->col; j++)
+            {
+                result.matrix[i][j] = this->matrix[i][j] / n;
+            }
+        }
+        return result;
+    }
+    void operator/=(dataType n)
+    {
+        for (size_t i = 0; i < this->row; i++)
+        {
+            for (size_t j = 0; j < this->col; j++)
+            {
+                this->matrix[i][j] /= n;
             }
         }
     }
@@ -384,6 +406,28 @@ inline Numcpp<T>::Numcpp(const size_t _row, const size_t _col, T value)
             for (size_t j = 0; j < _col; j++)
             {
                 matrix[i][j] = value;
+            }
+        }
+    }
+}
+template <typename T>
+inline Numcpp<T>::Numcpp(const T **mat, const size_t _row, const size_t _col)
+{
+    if (_row == 0 || _col == 0)
+    {
+        throw "Invalid creation";
+    }
+    else
+    {
+        row = _row;
+        col = _col;
+        matrix = new T *[_row];
+        for (size_t i = 0; i < _row; i++)
+        {
+            matrix[i] = new T[_col];
+            for (size_t j = 0; j < _col; j++)
+            {
+                matrix[i][j] = mat[i][j];
             }
         }
     }

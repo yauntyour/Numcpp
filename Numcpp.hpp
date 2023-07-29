@@ -315,14 +315,14 @@ Numcpp<T> operator>(const oper_object<T> &oper, const Numcpp<T> &B)
     }
     else
     {
-        Numcpp<T> result(oper.row * B.col, B.row);
-        for (size_t i = 0; i < B.col; i++)
+        Numcpp<T> result(oper.row, B.col, 0);
+        for (size_t i = 0; i < oper.row; i++)
         {
-            for (size_t j = 0; j < oper.row; j++)
+            for (size_t j = 0; j < B.col; j++)
             {
                 for (size_t k = 0; k < oper.col; k++)
                 {
-                    result.matrix[j + i * B.row][k] = oper.function_object((oper.matrix)[j][k], B.matrix[k][i]);
+                    result[i][j] += oper.function_object(oper.matrix[i][k], B.matrix[k][j]);
                 }
             }
         }

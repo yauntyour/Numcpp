@@ -26,8 +26,7 @@ void generate(Numcpp<nc_t> &nc)
 
 nc_t func(nc_t n, nc_t m)
 {
-    nc_t result = n * m;
-    return result;
+    return n + m;
 }
 nc_t sigmoid(nc_t n, nc_t m)
 {
@@ -68,8 +67,8 @@ int main(int argc, char const *argv[])
         c.transposed();
         std::cout << c << "\n";
 
-        // 矩阵的特殊乘法：
-        Numcpp<nc_t> Out = c<func> e; // 会创建一个新的矩阵
+        // 矩阵的函数乘法：
+        Numcpp<nc_t> Out = c<func> e; // 会产生一个新的矩阵
         std::cout << Out << "\n";
 
         // 函数数乘特殊乘法：

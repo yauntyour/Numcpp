@@ -4,8 +4,11 @@
 #include <complex>
 #include <math.h>
 #include <thread>
+#include <functional>
 #include <vector>
 
+#define cpu_optimization 1
+#define math_optimization 2
 namespace units
 {
     template <typename T>
@@ -247,13 +250,116 @@ namespace units
             throw std::invalid_argument("Matrix is too large or no a even matrix, use multicore optimization or do chunked iterative transport, turn on Coppersmith Winograd algorithm if needed");
         }
     }
+
+    // CPU optimization
+
+    template <typename T>
+    void atomic_opA(T **a, size_t offset_i, size_t offset_j, size_t black_len_i, size_t black_len_j, size_t *sign, std::function<void(T **, size_t, size_t)> opA)
+    {
+        for (size_t i = 0; i < black_len_i; i++)
+        {
+            for (size_t j = 0; j < black_len_j; j++)
+            {
+                opA(a, offset_i + i, offset_j + j);
+            }
+        }
+        *sign += black_len_i * black_len_j;
+    }
+    template <typename T>
+    void atomic_opAB(T **a, T **b, size_t offset_i, size_t offset_j, size_t black_len_i, size_t black_len_j, size_t *sign, std::function<void(T **, T **, size_t, size_t)> opAB)
+    {
+        for (size_t i = 0; i < black_len_i; i++)
+        {
+            for (size_t j = 0; j < black_len_j; j++)
+            {
+                opAB(a, b, offset_i + i, offset_j + j);
+            }
+        }
+        *sign += black_len_i * black_len_j;
+    }
+    template <typename T>
+    void atomic_opABC(T **a, T **b, T **c, size_t offset_i, size_t offset_j, size_t black_len_i, size_t black_len_j, size_t *sign, std::function<void(T **, T **, T **, size_t, size_t)> opABC)
+    {
+        for (size_t i = 0; i < black_len_i; i++)
+        {
+            for (size_t j = 0; j < black_len_j; j++)
+            {
+                opABC(a, b, c, offset_i + i, offset_j + j);
+            }
+        }
+        *sign += black_len_i * black_len_j;
+    }
+    template <typename T>
+    int A_thread_worker(T **a, size_t a_row, size_t a_col, size_t cpu_thread_max, std::function<void(T **, size_t, size_t)> opA)
+    {
+        size_t mat_n = sqrt(cpu_thread_max);
+        std::thread t_list[cpu_thread_max];
+        size_t black_len_i = a_row / mat_n;
+        size_t black_len_j = a_col / mat_n;
+        size_t sign = 0;
+        for (size_t i = 0; i < mat_n; i++)
+        {
+            for (size_t j = 0; j < mat_n; j++)
+            {
+                t_list[i * mat_n + j] = std::thread([=, &sign]()
+                                                    { atomic_opA<T>(a, i * black_len_i, j * black_len_j, black_len_i, black_len_j, &sign, opA); });
+                t_list[i * mat_n + j].detach();
+            }
+        }
+        while (sign < a_row * a_col)
+            ;
+        return 0;
+    }
+    template <typename T>
+    int AB_thread_worker(T **a, size_t a_row, size_t a_col, T **b, size_t cpu_thread_max, std::function<void(T **, T **, size_t, size_t)> opAB)
+    {
+        size_t mat_n = sqrt(cpu_thread_max);
+        std::thread t_list[cpu_thread_max];
+        size_t black_len_i = a_row / mat_n;
+        size_t black_len_j = a_col / mat_n;
+        size_t sign = 0;
+        for (size_t i = 0; i < mat_n; i++)
+        {
+            for (size_t j = 0; j < mat_n; j++)
+            {
+                t_list[i * mat_n + j] = std::thread([=, &sign]()
+                                                    { atomic_opAB<T>(a, b, i * black_len_i, j * black_len_j, black_len_i, black_len_j, &sign, opAB); });
+                t_list[i * mat_n + j].detach();
+            }
+        }
+        while (sign < a_row * a_col)
+            ;
+        return 0;
+    }
+    template <typename T>
+    int ABC_thread_worker(T **a, size_t a_row, size_t a_col, T **b, T **c, size_t cpu_thread_max, std::function<void(T **, T **, T **, size_t, size_t)> opABC)
+    {
+        size_t mat_n = sqrt(cpu_thread_max);
+        std::thread t_list[cpu_thread_max];
+        size_t black_len_i = a_row / mat_n;
+        size_t black_len_j = a_col / mat_n;
+        size_t sign = 0;
+        for (size_t i = 0; i < mat_n; i++)
+        {
+            for (size_t j = 0; j < mat_n; j++)
+            {
+                t_list[i * mat_n + j] = std::thread([=, &sign]()
+                                                    { atomic_opABC<T>(a, b, c, i * black_len_i, j * black_len_j, black_len_i, black_len_j, &sign, opABC); });
+                t_list[i * mat_n + j].detach();
+            }
+        }
+        while (sign < a_row * a_col)
+            ;
+        return 0;
+    }
+
 }; // namespace units
 
 template <typename dataType>
 class Numcpp
 {
 private:
-    bool optimization = false;
+    short optimization = 0;
     size_t maxprocs = 1;
 
 public:
@@ -274,12 +380,20 @@ public:
         }
         else
         {
-            for (size_t i = 0; i < this->row; i++)
+            if (this->optimization == false)
             {
-                for (size_t j = 0; j < this->col; j++)
+                for (size_t i = 0; i < this->row; i++)
                 {
-                    this->matrix[i][j] = other.matrix[i][j];
+                    for (size_t j = 0; j < this->col; j++)
+                    {
+                        this->matrix[i][j] = other.matrix[i][j];
+                    }
                 }
+            }
+            else
+            {
+                units::AB_thread_worker<dataType>(this->matrix, this->row, this->col, other.matrix, this->maxprocs, [](dataType **a, dataType **b, size_t i, size_t j)
+                                                  { a[i][j] = b[i][j]; });
             }
         }
     }
@@ -291,12 +405,20 @@ public:
         }
         else
         {
-            for (size_t i = 0; i < this->row; i++)
+            if (this->optimization == false)
             {
-                for (size_t j = 0; j < this->col; j++)
+                for (size_t i = 0; i < this->row; i++)
                 {
-                    this->matrix[i][j] += other.matrix[i][j];
+                    for (size_t j = 0; j < this->col; j++)
+                    {
+                        this->matrix[i][j] = other.matrix[i][j];
+                    }
                 }
+            }
+            else
+            {
+                units::AB_thread_worker(this->matrix, this->row, this->col, other.matrix, this->maxprocs, [](dataType **a, dataType **b, size_t i, size_t j)
+                                        { a[i][j] += b[i][j]; });
             }
         }
     }
@@ -309,12 +431,20 @@ public:
         else
         {
             Numcpp<dataType> result(this->row, this->col);
-            for (size_t i = 0; i < this->row; i++)
+            if (this->optimization == false)
             {
-                for (size_t j = 0; j < this->col; j++)
+                for (size_t i = 0; i < this->row; i++)
                 {
-                    result.matrix[i][j] = this->matrix[i][j] + other.matrix[i][j];
+                    for (size_t j = 0; j < this->col; j++)
+                    {
+                        result.matrix[i][j] = this->matrix[i][j] + other.matrix[i][j];
+                    }
                 }
+            }
+            else
+            {
+                units::ABC_thread_worker<dataType>(this->matrix, this->row, this->col, other.matrix, result.matrix, this->maxprocs, [](dataType **a, dataType **b, dataType **c, size_t i, size_t j)
+                                                   { c[i][j] = a[i][j] + b[i][j]; });
             }
             return result;
         }
@@ -327,12 +457,20 @@ public:
         }
         else
         {
-            for (size_t i = 0; i < this->row; i++)
+            if (this->optimization == false)
             {
-                for (size_t j = 0; j < this->col; j++)
+                for (size_t i = 0; i < this->row; i++)
                 {
-                    this->matrix[i][j] -= other.matrix[i][j];
+                    for (size_t j = 0; j < this->col; j++)
+                    {
+                        this->matrix[i][j] -= other.matrix[i][j];
+                    }
                 }
+            }
+            else
+            {
+                units::AB_thread_worker(this->matrix, this->row, this->col, other.matrix, this->maxprocs, [](dataType **a, dataType **b, size_t i, size_t j)
+                                        { a[i][j] -= b[i][j]; });
             }
         }
     }
@@ -345,12 +483,20 @@ public:
         else
         {
             Numcpp<dataType> result(this->row, this->col);
-            for (size_t i = 0; i < this->row; i++)
+            if (this->optimization == false)
             {
-                for (size_t j = 0; j < this->col; j++)
+                for (size_t i = 0; i < this->row; i++)
                 {
-                    result.matrix[i][j] = this->matrix[i][j] - other.matrix[i][j];
+                    for (size_t j = 0; j < this->col; j++)
+                    {
+                        result.matrix[i][j] = this->matrix[i][j] - other.matrix[i][j];
+                    }
                 }
+            }
+            else
+            {
+                units::ABC_thread_worker<dataType>(result.matrix, this->row, this->col, this->matrix, other.matrix, this->maxprocs, [](dataType **a, dataType **b, dataType **c, size_t i, size_t j)
+                                                   { a[i][j] = b[i][j] - c[i][j]; });
             }
             return result;
         }
@@ -358,45 +504,77 @@ public:
     Numcpp<dataType> operator*(dataType n)
     {
         Numcpp<dataType> result(this->row, this->col);
-        for (size_t i = 0; i < this->row; i++)
+        if (this->optimization == false)
         {
-            for (size_t j = 0; j < this->col; j++)
+            for (size_t i = 0; i < this->row; i++)
             {
-                result.matrix[i][j] = this->matrix[i][j] * n;
+                for (size_t j = 0; j < this->col; j++)
+                {
+                    result.matrix[i][j] = this->matrix[i][j] * n;
+                }
             }
+        }
+        else
+        {
+            units::A_thread_worker(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
+                                   { a[i][j] *= n; });
         }
         return result;
     }
     void operator*=(dataType n)
     {
-        for (size_t i = 0; i < this->row; i++)
+        if (this->optimization == false)
         {
-            for (size_t j = 0; j < this->col; j++)
+            for (size_t i = 0; i < this->row; i++)
             {
-                this->matrix[i][j] *= n;
+                for (size_t j = 0; j < this->col; j++)
+                {
+                    this->matrix[i][j] *= n;
+                }
             }
+        }
+        else
+        {
+            units::A_thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
+                                             { a[i][j] *= n; });
         }
     }
     Numcpp<dataType> operator/(dataType n)
     {
         Numcpp<dataType> result(this->row, this->col);
-        for (size_t i = 0; i < this->row; i++)
+        if (this->optimization == false)
         {
-            for (size_t j = 0; j < this->col; j++)
+            for (size_t i = 0; i < this->row; i++)
             {
-                result.matrix[i][j] = this->matrix[i][j] / n;
+                for (size_t j = 0; j < this->col; j++)
+                {
+                    result.matrix[i][j] = this->matrix[i][j] * n;
+                }
             }
+        }
+        else
+        {
+            units::A_thread_worker(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
+                                   { a[i][j] /= n; });
         }
         return result;
     }
     void operator/=(dataType n)
     {
-        for (size_t i = 0; i < this->row; i++)
+        if (this->optimization == false)
         {
-            for (size_t j = 0; j < this->col; j++)
+            for (size_t i = 0; i < this->row; i++)
             {
-                this->matrix[i][j] /= n;
+                for (size_t j = 0; j < this->col; j++)
+                {
+                    this->matrix[i][j] /= n;
+                }
             }
+        }
+        else
+        {
+            units::A_thread_worker(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
+                                   { a[i][j] *= n; });
         }
     }
     /*Matrix function complex*/
@@ -432,7 +610,26 @@ public:
     Numcpp transpose();
     void Hadamard_self(const Numcpp<dataType> &);
     Numcpp Hadamard(const Numcpp<dataType> &);
-    void optimized(bool b);
+
+    void optimized(bool flag)
+    {
+        this->optimization = flag;
+    }
+    /*
+     * set the maxprocs for this matrix, used in multi-threaded operations
+     * Usually the maxprocs is under the number of CPU cores
+     */
+    void maxprocs_set(size_t thread_num)
+    {
+        if (sqrt(thread_num) * sqrt(thread_num) > std::thread::hardware_concurrency() || thread_num < 1)
+        {
+            throw std::invalid_argument("Invalid maxprocs");
+        }
+        else
+        {
+            this->maxprocs = thread_num;
+        }
+    }
     //
     ~Numcpp();
     void ffted(size_t inv)
@@ -500,8 +697,7 @@ class oper_object
 public:
     size_t row, col;
     T **matrix;
-    T(*function_object)
-    (T A, T B);
+    T (*function_object)(T A, T B);
     oper_object(const Numcpp<T> &A, T (*function_object)(T A, T B))
     {
         this->row = A.row;
@@ -567,13 +763,21 @@ Numcpp<T>::Numcpp(const size_t _row, const size_t _col)
         row = _row;
         col = _col;
         matrix = new T *[_row];
-        for (size_t i = 0; i < _row; i++)
+        if (this->optimization == false)
         {
-            matrix[i] = new T[_col];
-            for (size_t j = 0; j < _col; j++)
+            for (size_t i = 0; i < _row; i++)
             {
-                matrix[i][j] = (T)1;
+                matrix[i] = new T[_col];
+                for (size_t j = 0; j < _col; j++)
+                {
+                    matrix[i][j] = (T)1;
+                }
             }
+        }
+        else
+        {
+            units::A_thread_worker<T>(matrix, _row, _col, this->maxprocs, [](T **a, size_t i, size_t j)
+                                      { a[i][j] = (T)1; });
         }
     }
 }
@@ -589,13 +793,21 @@ inline Numcpp<T>::Numcpp(const size_t _row, const size_t _col, T value)
         row = _row;
         col = _col;
         matrix = new T *[_row];
-        for (size_t i = 0; i < _row; i++)
+        if (this->optimization == false)
         {
-            matrix[i] = new T[_col];
-            for (size_t j = 0; j < _col; j++)
+            for (size_t i = 0; i < _row; i++)
             {
-                matrix[i][j] = value;
+                matrix[i] = new T[_col];
+                for (size_t j = 0; j < _col; j++)
+                {
+                    matrix[i][j] = value;
+                }
             }
+        }
+        else
+        {
+            units::A_thread_worker<T>(matrix, _row, _col, this->maxprocs, [value](T **a, size_t i, size_t j)
+                                      { a[i][j] = value; });
         }
     }
 }
@@ -611,13 +823,21 @@ inline Numcpp<T>::Numcpp(const T **mat, const size_t _row, const size_t _col)
         row = _row;
         col = _col;
         matrix = new T *[_row];
-        for (size_t i = 0; i < _row; i++)
+        if (this->optimization == false)
         {
-            matrix[i] = new T[_col];
-            for (size_t j = 0; j < _col; j++)
+            for (size_t i = 0; i < _row; i++)
             {
-                matrix[i][j] = mat[i][j];
+                matrix[i] = new T[_col];
+                for (size_t j = 0; j < _col; j++)
+                {
+                    matrix[i][j] = mat[i][j];
+                }
             }
+        }
+        else
+        {
+            units::AB_thread_worker<T>(matrix, _row, _col, mat, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
+                                       { a[i][j] = b[i][j]; });
         }
     }
 }
@@ -633,13 +853,21 @@ Numcpp<T>::Numcpp(const Numcpp<T> &other)
         row = other.row;
         col = other.col;
         matrix = new T *[row];
-        for (size_t i = 0; i < row; i++)
+        if (this->optimization == false)
         {
-            matrix[i] = new T[col];
-            for (size_t j = 0; j < col; j++)
+            for (size_t i = 0; i < row; i++)
             {
-                matrix[i][j] = other.matrix[i][j];
+                matrix[i] = new T[col];
+                for (size_t j = 0; j < col; j++)
+                {
+                    matrix[i][j] = other.matrix[i][j];
+                }
             }
+        }
+        else
+        {
+            units::AB_thread_worker<T>(matrix, this->row, this->col, other.matrix, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
+                                       { a[i][j] = b[i][j]; });
         }
     }
 }
@@ -656,12 +884,20 @@ template <typename T>
 Numcpp<T> Numcpp<T>::transpose()
 {
     Numcpp<T> result(this->col, this->row);
-    for (size_t i = 0; i < this->col; i++)
+    if (this->optimization == false)
     {
-        for (size_t j = 0; j < this->row; j++)
+        for (size_t i = 0; i < this->row; i++)
         {
-            result[i][j] = matrix[j][i];
+            for (size_t j = 0; j < this->col; j++)
+            {
+                result.matrix[j][i] = this->matrix[i][j];
+            }
         }
+    }
+    else
+    {
+        units::AB_thread_worker<T>(this->matrix, this->row, this->col, result.matrix, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
+                                   { b[j][i] = a[i][j]; });
     }
     return result;
 }
@@ -672,14 +908,27 @@ void Numcpp<T>::transposed()
     size_t y = this->row;
     T **temp = new T *[x];
 
-    for (size_t i = 0; i < x; i++)
+    if (this->optimization == false)
     {
-        temp[i] = new T[y];
-        for (size_t j = 0; j < y; j++)
+        for (size_t i = 0; i < x; i++)
         {
-            temp[i][j] = this->matrix[j][i];
+            temp[i] = new T[y];
+            for (size_t j = 0; j < y; j++)
+            {
+                temp[i][j] = this->matrix[j][i];
+            }
         }
     }
+    else
+    {
+        for (size_t i = 0; i < x; i++)
+        {
+            temp[i] = new T[y];
+        }
+        units::AB_thread_worker<T>(this->matrix, this->row, this->col, temp, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
+                                   { b[j][i] = a[i][j]; });
+    }
+
     for (size_t i = 0; i < this->row; i++)
     {
         delete matrix[i];
@@ -699,12 +948,20 @@ void Numcpp<T>::Hadamard_self(const Numcpp<T> &other)
     }
     else
     {
-        for (size_t i = 0; i < this->row; i++)
+        if (this->optimization == false)
         {
-            for (size_t j = 0; j < this->col; j++)
+            for (size_t i = 0; i < this->row; i++)
             {
-                this->matrix[i][j] *= other.matrix[i][j];
+                for (size_t j = 0; j < this->col; j++)
+                {
+                    this->matrix[i][j] *= other.matrix[i][j];
+                }
             }
+        }
+        else
+        {
+            units::AB_thread_worker<T>(this->matrix, this->row, this->col, other.matrix, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
+                                       { a[i][j] *= b[i][j]; });
         }
     }
 }
@@ -717,20 +974,8 @@ Numcpp<T> Numcpp<T>::Hadamard(const Numcpp<T> &other)
     }
     else
     {
-        Numcpp<T> result(this->row, this->col);
-        for (size_t i = 0; i < this->row; i++)
-        {
-            for (size_t j = 0; j < this->col; j++)
-            {
-                result.matrix[i][j] = this->matrix[i][j] * other.matrix[i][j];
-            }
-        }
+        Numcpp<T> result(other);
+        result.Hadamard_self(*this);
         return result;
     }
-}
-template <typename T>
-void Numcpp<T>::optimized(bool b)
-{
-    this->optimization = b;
-    return;
 }

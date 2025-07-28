@@ -8,3 +8,6 @@ ffttest-2.exe
 ffttest-2.cpp
 fft.ipynb
 .gitignore
+test.exe
+test.cpp
+MLP.exe

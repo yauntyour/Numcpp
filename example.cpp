@@ -37,7 +37,7 @@ nc_t sigmoid(nc_t n, nc_t m)
 int main(int argc, char const *argv[])
 {
     /*使用Numcpp<type> np(row,col)创建一个row * col的矩阵*/
-    Numcpp<nc_t> n(4, 4), m(4, 4);
+    Numcpp<nc_t> n(16, 16), m(16, 16);
 
     /*矩阵中所有元素的默认值为1，也可以手动设置*/
     Numcpp<nc_t> c(6, 7, 3.0);
@@ -54,8 +54,7 @@ int main(int argc, char const *argv[])
         Numcpp<nc_t> result = n * m;
         std::cout << result << "\n";
 
-        // 使用矩阵乘法优化算法，在M*K*N >64*64*64时生效,对特殊乘法无效
-        n.optimized(true);
+        // 使用矩阵乘法优化算法，在M*K*N >64*64*64时生效,对特殊乘法无效;
 
         // 矩阵运算：
         result = n + m;

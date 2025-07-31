@@ -376,7 +376,7 @@ int main(int argc, char const *argv[])
     Numcpp<nc_t> Hider_Bais(Aver.row, Hider_Wei.col, 0); // 16*2
     Numcpp<nc_t> Out_Wei(Hider_Wei.col, 1);              // 2*1
     Numcpp<nc_t> Out_Bais(Aver.row, Out_Wei.col, 0);     // 16*1
-    //10w次
+    //训练循环次数
     for (size_t i = 0; i < 100000; i++)
     // while (1)
     {

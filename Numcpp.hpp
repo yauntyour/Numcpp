@@ -429,633 +429,637 @@ namespace units
     }
 
 }; // namespace units
-
-static bool is_optimized = false;
-static size_t MAX_thread = 1;
-
-template <typename dataType>
-class Numcpp
+namespace np
 {
-private:
-    bool optimization = is_optimized;
-    size_t maxprocs = MAX_thread;
 
-public:
-    dataType **matrix;
-    size_t row, col;
-    Numcpp(const size_t _row, const size_t _col);
-    Numcpp(const size_t _row, const size_t _col, dataType value);
-    Numcpp(const Numcpp<dataType> &other);
-    Numcpp(const dataType **mat, const size_t _row, const size_t _col);
-    /*
-    operators
-    */
-    void operator=(const Numcpp<dataType> &other)
-    {
-        if (other.row != this->row || other.col != this->col)
-        {
-            throw std::invalid_argument("Invalid Matrix");
-        }
-        else
-        {
-            if (this->optimization == false)
-            {
-                for (size_t i = 0; i < this->row; i++)
-                {
-                    for (size_t j = 0; j < this->col; j++)
-                    {
-                        this->matrix[i][j] = other.matrix[i][j];
-                    }
-                }
-            }
-            else
-            {
-                units::AB_thread_worker<dataType>(this->matrix, this->row, this->col, other.matrix, this->maxprocs, [](dataType **a, dataType **b, size_t i, size_t j)
-                                                  { a[i][j] = b[i][j]; });
-            }
-        }
-    }
-    void operator+=(const Numcpp<dataType> &other)
-    {
-        if (other.row != this->row || other.col != this->col)
-        {
-            throw std::invalid_argument("Invalid Matrix");
-        }
-        else
-        {
-            if (this->optimization == false)
-            {
-                for (size_t i = 0; i < this->row; i++)
-                {
-                    for (size_t j = 0; j < this->col; j++)
-                    {
-                        this->matrix[i][j] = other.matrix[i][j];
-                    }
-                }
-            }
-            else
-            {
-                units::AB_thread_worker<dataType>(this->matrix, this->row, this->col, other.matrix, this->maxprocs, [](dataType **a, dataType **b, size_t i, size_t j)
-                                                  { a[i][j] += b[i][j]; });
-            }
-        }
-    }
-    Numcpp<dataType> operator+(const Numcpp<dataType> &other)
-    {
-        if (other.row != this->row || other.col != this->col)
-        {
-            throw std::invalid_argument("Invalid Matrix");
-        }
-        else
-        {
-            Numcpp<dataType> result(this->row, this->col);
-            if (this->optimization == false)
-            {
-                for (size_t i = 0; i < this->row; i++)
-                {
-                    for (size_t j = 0; j < this->col; j++)
-                    {
-                        result.matrix[i][j] = this->matrix[i][j] + other.matrix[i][j];
-                    }
-                }
-            }
-            else
-            {
-                dataType **temp = other.matrix;
-                units::ABC_thread_worker<dataType>(this->matrix, this->row, this->col, temp, result.matrix, this->maxprocs, [](dataType **a, dataType **b, dataType **c, size_t i, size_t j)
-                                                   { c[i][j] = a[i][j] + b[i][j]; });
-            }
-            return result;
-        }
-    }
-    void operator-=(const Numcpp<dataType> &other)
-    {
-        if (other.row != this->row || other.col != this->col)
-        {
-            throw std::invalid_argument("Invalid Matrix");
-        }
-        else
-        {
-            if (this->optimization == false)
-            {
-                for (size_t i = 0; i < this->row; i++)
-                {
-                    for (size_t j = 0; j < this->col; j++)
-                    {
-                        this->matrix[i][j] -= other.matrix[i][j];
-                    }
-                }
-            }
-            else
-            {
-                units::AB_thread_worker<dataType>(this->matrix, this->row, this->col, other.matrix, this->maxprocs, [](dataType **a, dataType **b, size_t i, size_t j)
-                                                  { a[i][j] -= b[i][j]; });
-            }
-        }
-    }
-    Numcpp<dataType> operator-(const Numcpp<dataType> &other)
-    {
-        if (other.row != this->row || other.col != this->col)
-        {
-            throw std::invalid_argument("Invalid Matrix");
-        }
-        else
-        {
-            Numcpp<dataType> result(this->row, this->col);
-            if (this->optimization == false)
-            {
-                for (size_t i = 0; i < this->row; i++)
-                {
-                    for (size_t j = 0; j < this->col; j++)
-                    {
-                        result.matrix[i][j] = this->matrix[i][j] - other.matrix[i][j];
-                    }
-                }
-            }
-            else
-            {
-                dataType **temp = other.matrix;
-                units::ABC_thread_worker<dataType>(this->matrix, this->row, this->col, temp, result.matrix, this->maxprocs, [](dataType **a, dataType **b, dataType **c, size_t i, size_t j)
-                                                   { c[i][j] = a[i][j] - b[i][j]; });
-            }
-            return result;
-        }
-    }
-    Numcpp<dataType> operator*(dataType n)
-    {
-        Numcpp<dataType> result(this->row, this->col);
-        if (this->optimization == false)
-        {
-            for (size_t i = 0; i < this->row; i++)
-            {
-                for (size_t j = 0; j < this->col; j++)
-                {
-                    result.matrix[i][j] = this->matrix[i][j] * n;
-                }
-            }
-        }
-        else
-        {
-            units::A_thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
-                                             { a[i][j] *= n; });
-        }
-        return result;
-    }
-    void operator*=(dataType n)
-    {
-        if (this->optimization == false)
-        {
-            for (size_t i = 0; i < this->row; i++)
-            {
-                for (size_t j = 0; j < this->col; j++)
-                {
-                    this->matrix[i][j] *= n;
-                }
-            }
-        }
-        else
-        {
-            units::A_thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
-                                             { a[i][j] *= n; });
-        }
-    }
-    Numcpp<dataType> operator/(dataType n)
-    {
-        Numcpp<dataType> result(this->row, this->col);
-        if (this->optimization == false)
-        {
-            for (size_t i = 0; i < this->row; i++)
-            {
-                for (size_t j = 0; j < this->col; j++)
-                {
-                    result.matrix[i][j] = this->matrix[i][j] * n;
-                }
-            }
-        }
-        else
-        {
-            units::A_thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
-                                             { a[i][j] /= n; });
-        }
-        return result;
-    }
-    void operator/=(dataType n)
-    {
-        if (this->optimization == false)
-        {
-            for (size_t i = 0; i < this->row; i++)
-            {
-                for (size_t j = 0; j < this->col; j++)
-                {
-                    this->matrix[i][j] /= n;
-                }
-            }
-        }
-        else
-        {
-            units::A_thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
-                                             { a[i][j] *= n; });
-        }
-    }
-    /*Matrix function complex*/
-    /*the col of first matrix is the same as the row of second matrix*/
-    Numcpp<dataType> operator*(const Numcpp<dataType> &other)
-    {
-        if (this->col != other.row)
-        {
-            throw std::invalid_argument("Invalid Matrix");
-        }
-        else
-        {
-            Numcpp<dataType> result(this->row, other.col, 0);
-            if (this->optimization = true)
-            {
-                units::mm_auto(this->matrix, other.matrix, result.matrix, this->row, other.row, this->col, other.col, true);
-            }
-            else
-            {
-                units::mm_generate(this->matrix, other.matrix, result.matrix, this->row, other.row, this->col, other.row, 0, 0, 0, 0);
-            }
-            return result;
-        }
-    }
-    /*index for each*/
-    dataType *operator[](const size_t index)
-    {
-        return index < this->row ? this->matrix[index] : NULL;
-    }
-    /*transposed this matrix*/
-    void transposed();
-    /*the transposition of this matrix*/
-    Numcpp transpose();
-    void Hadamard_self(const Numcpp<dataType> &);
-    Numcpp Hadamard(const Numcpp<dataType> &);
+    static bool is_optimized = false;
+    static size_t MAX_thread = 1;
 
-    void optimized(bool flag)
+    template <typename dataType>
+    class Numcpp
     {
-        this->optimization = flag;
-    }
-    /*
-     * set the maxprocs for this matrix, used in multi-threaded operations
-     * Usually the maxprocs is under the number of CPU cores
-     */
-    void maxprocs_set(size_t thread_num)
-    {
-        if (sqrt(thread_num) * sqrt(thread_num) > std::thread::hardware_concurrency() || thread_num < 1)
-        {
-            throw std::invalid_argument("Invalid maxprocs");
-        }
-        else
-        {
-            this->maxprocs = thread_num;
-        }
-    }
-    //
-    ~Numcpp();
-    void ffted(size_t inv)
-    {
-        dataType **result = new dataType *[this->row];
-        for (size_t i = 0; i < this->row; i++)
-        {
-            result[i] = new dataType[this->col];
-        }
+    private:
+        bool optimization = is_optimized;
+        size_t maxprocs = MAX_thread;
 
-        for (size_t i = 0; i < this->row; i++)
+    public:
+        dataType **matrix;
+        size_t row, col;
+        Numcpp(const size_t _row, const size_t _col);
+        Numcpp(const size_t _row, const size_t _col, dataType value);
+        Numcpp(const Numcpp<dataType> &other);
+        Numcpp(const dataType **mat, const size_t _row, const size_t _col);
+        /*
+        operators
+        */
+        void operator=(const Numcpp<dataType> &other)
         {
-            units::fft(this->matrix + i, this->col, result + i, inv);
-        }
-        for (size_t i = 0; i < this->row; i++)
-        {
-            for (size_t j = 0; j < this->col; j++)
+            if (other.row != this->row || other.col != this->col)
             {
-                if (inv < 0)
+                throw std::invalid_argument("Invalid Matrix");
+            }
+            else
+            {
+                if (this->optimization == false)
                 {
-                    this->matrix[i][j] = result[i][j];
-                    this->matrix[i][j] /= this->col;
+                    for (size_t i = 0; i < this->row; i++)
+                    {
+                        for (size_t j = 0; j < this->col; j++)
+                        {
+                            this->matrix[i][j] = other.matrix[i][j];
+                        }
+                    }
                 }
                 else
                 {
-                    this->matrix[i][j] = result[i][j];
+                    units::AB_thread_worker<dataType>(this->matrix, this->row, this->col, other.matrix, this->maxprocs, [](dataType **a, dataType **b, size_t i, size_t j)
+                                                      { a[i][j] = b[i][j]; });
                 }
             }
         }
-    }
-    Numcpp fft(size_t inv)
-    {
-        Numcpp<dataType> result(this->row, this->col);
-        for (size_t i = 0; i < this->row; i++)
+        void operator+=(const Numcpp<dataType> &other)
         {
-            units::fft(this->matrix + i, this->col, result.matrix + i, inv);
-        }
-        if (inv < 0)
-        {
-            result *= (1 / this->col);
-        }
-        return result;
-    }
-
-    template <typename T>
-    friend std::ostream &operator<<(std::ostream &stream, const Numcpp<T> &m)
-    {
-        stream << '(' << m.row << ',' << m.col << ')' << "[\n";
-        for (size_t i = 0; i < m.row; ++i)
-        {
-            stream << "    [" << i << "][";
-            for (size_t j = 0; j < m.col; ++j)
+            if (other.row != this->row || other.col != this->col)
             {
-                stream << (T)(m.matrix[i][j]) << (j == m.col - 1 ? "]\n" : " , ");
+                throw std::invalid_argument("Invalid Matrix");
+            }
+            else
+            {
+                if (this->optimization == false)
+                {
+                    for (size_t i = 0; i < this->row; i++)
+                    {
+                        for (size_t j = 0; j < this->col; j++)
+                        {
+                            this->matrix[i][j] = other.matrix[i][j];
+                        }
+                    }
+                }
+                else
+                {
+                    units::AB_thread_worker<dataType>(this->matrix, this->row, this->col, other.matrix, this->maxprocs, [](dataType **a, dataType **b, size_t i, size_t j)
+                                                      { a[i][j] += b[i][j]; });
+                }
             }
         }
-        stream << "]\n";
-        return stream;
-    }
-};
-// matrix special operate
-template <typename T>
-class oper_object
-{
-public:
-    size_t row, col;
-    T **matrix;
-    T (*function_object)(T A, T B);
-    oper_object(const Numcpp<T> &A, T (*function_object)(T A, T B))
-    {
-        this->row = A.row;
-        this->col = A.col;
-        this->matrix = (A.matrix);
-        this->function_object = function_object;
+        Numcpp<dataType> operator+(const Numcpp<dataType> &other)
+        {
+            if (other.row != this->row || other.col != this->col)
+            {
+                throw std::invalid_argument("Invalid Matrix");
+            }
+            else
+            {
+                Numcpp<dataType> result(this->row, this->col);
+                if (this->optimization == false)
+                {
+                    for (size_t i = 0; i < this->row; i++)
+                    {
+                        for (size_t j = 0; j < this->col; j++)
+                        {
+                            result.matrix[i][j] = this->matrix[i][j] + other.matrix[i][j];
+                        }
+                    }
+                }
+                else
+                {
+                    dataType **temp = other.matrix;
+                    units::ABC_thread_worker<dataType>(this->matrix, this->row, this->col, temp, result.matrix, this->maxprocs, [](dataType **a, dataType **b, dataType **c, size_t i, size_t j)
+                                                       { c[i][j] = a[i][j] + b[i][j]; });
+                }
+                return result;
+            }
+        }
+        void operator-=(const Numcpp<dataType> &other)
+        {
+            if (other.row != this->row || other.col != this->col)
+            {
+                throw std::invalid_argument("Invalid Matrix");
+            }
+            else
+            {
+                if (this->optimization == false)
+                {
+                    for (size_t i = 0; i < this->row; i++)
+                    {
+                        for (size_t j = 0; j < this->col; j++)
+                        {
+                            this->matrix[i][j] -= other.matrix[i][j];
+                        }
+                    }
+                }
+                else
+                {
+                    units::AB_thread_worker<dataType>(this->matrix, this->row, this->col, other.matrix, this->maxprocs, [](dataType **a, dataType **b, size_t i, size_t j)
+                                                      { a[i][j] -= b[i][j]; });
+                }
+            }
+        }
+        Numcpp<dataType> operator-(const Numcpp<dataType> &other)
+        {
+            if (other.row != this->row || other.col != this->col)
+            {
+                throw std::invalid_argument("Invalid Matrix");
+            }
+            else
+            {
+                Numcpp<dataType> result(this->row, this->col);
+                if (this->optimization == false)
+                {
+                    for (size_t i = 0; i < this->row; i++)
+                    {
+                        for (size_t j = 0; j < this->col; j++)
+                        {
+                            result.matrix[i][j] = this->matrix[i][j] - other.matrix[i][j];
+                        }
+                    }
+                }
+                else
+                {
+                    dataType **temp = other.matrix;
+                    units::ABC_thread_worker<dataType>(this->matrix, this->row, this->col, temp, result.matrix, this->maxprocs, [](dataType **a, dataType **b, dataType **c, size_t i, size_t j)
+                                                       { c[i][j] = a[i][j] - b[i][j]; });
+                }
+                return result;
+            }
+        }
+        Numcpp<dataType> operator*(dataType n)
+        {
+            Numcpp<dataType> result(this->row, this->col);
+            if (this->optimization == false)
+            {
+                for (size_t i = 0; i < this->row; i++)
+                {
+                    for (size_t j = 0; j < this->col; j++)
+                    {
+                        result.matrix[i][j] = this->matrix[i][j] * n;
+                    }
+                }
+            }
+            else
+            {
+                units::A_thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
+                                                 { a[i][j] *= n; });
+            }
+            return result;
+        }
+        void operator*=(dataType n)
+        {
+            if (this->optimization == false)
+            {
+                for (size_t i = 0; i < this->row; i++)
+                {
+                    for (size_t j = 0; j < this->col; j++)
+                    {
+                        this->matrix[i][j] *= n;
+                    }
+                }
+            }
+            else
+            {
+                units::A_thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
+                                                 { a[i][j] *= n; });
+            }
+        }
+        Numcpp<dataType> operator/(dataType n)
+        {
+            Numcpp<dataType> result(this->row, this->col);
+            if (this->optimization == false)
+            {
+                for (size_t i = 0; i < this->row; i++)
+                {
+                    for (size_t j = 0; j < this->col; j++)
+                    {
+                        result.matrix[i][j] = this->matrix[i][j] * n;
+                    }
+                }
+            }
+            else
+            {
+                units::A_thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
+                                                 { a[i][j] /= n; });
+            }
+            return result;
+        }
+        void operator/=(dataType n)
+        {
+            if (this->optimization == false)
+            {
+                for (size_t i = 0; i < this->row; i++)
+                {
+                    for (size_t j = 0; j < this->col; j++)
+                    {
+                        this->matrix[i][j] /= n;
+                    }
+                }
+            }
+            else
+            {
+                units::A_thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
+                                                 { a[i][j] *= n; });
+            }
+        }
+        /*Matrix function complex*/
+        /*the col of first matrix is the same as the row of second matrix*/
+        Numcpp<dataType> operator*(const Numcpp<dataType> &other)
+        {
+            if (this->col != other.row)
+            {
+                throw std::invalid_argument("Invalid Matrix");
+            }
+            else
+            {
+                Numcpp<dataType> result(this->row, other.col, 0);
+                if (this->optimization = true)
+                {
+                    units::mm_auto(this->matrix, other.matrix, result.matrix, this->row, other.row, this->col, other.col, true);
+                }
+                else
+                {
+                    units::mm_generate(this->matrix, other.matrix, result.matrix, this->row, other.row, this->col, other.row, 0, 0, 0, 0);
+                }
+                return result;
+            }
+        }
+        /*index for each*/
+        dataType *operator[](const size_t index)
+        {
+            return index < this->row ? this->matrix[index] : NULL;
+        }
+        /*transposed this matrix*/
+        void transposed();
+        /*the transposition of this matrix*/
+        Numcpp transpose();
+        void Hadamard_self(const Numcpp<dataType> &);
+        Numcpp Hadamard(const Numcpp<dataType> &);
+
+        void optimized(bool flag)
+        {
+            this->optimization = flag;
+        }
+        /*
+         * set the maxprocs for this matrix, used in multi-threaded operations
+         * Usually the maxprocs is under the number of CPU cores
+         */
+        void maxprocs_set(size_t thread_num)
+        {
+            if (sqrt(thread_num) * sqrt(thread_num) > std::thread::hardware_concurrency() || thread_num < 1)
+            {
+                throw std::invalid_argument("Invalid maxprocs");
+            }
+            else
+            {
+                this->maxprocs = thread_num;
+            }
+        }
+        //
+        ~Numcpp();
+        void ffted(size_t inv)
+        {
+            dataType **result = new dataType *[this->row];
+            for (size_t i = 0; i < this->row; i++)
+            {
+                result[i] = new dataType[this->col];
+            }
+
+            for (size_t i = 0; i < this->row; i++)
+            {
+                units::fft(this->matrix + i, this->col, result + i, inv);
+            }
+            for (size_t i = 0; i < this->row; i++)
+            {
+                for (size_t j = 0; j < this->col; j++)
+                {
+                    if (inv < 0)
+                    {
+                        this->matrix[i][j] = result[i][j];
+                        this->matrix[i][j] /= this->col;
+                    }
+                    else
+                    {
+                        this->matrix[i][j] = result[i][j];
+                    }
+                }
+            }
+        }
+        Numcpp fft(size_t inv)
+        {
+            Numcpp<dataType> result(this->row, this->col);
+            for (size_t i = 0; i < this->row; i++)
+            {
+                units::fft(this->matrix + i, this->col, result.matrix + i, inv);
+            }
+            if (inv < 0)
+            {
+                result *= (1 / this->col);
+            }
+            return result;
+        }
+
+        template <typename T>
+        friend std::ostream &operator<<(std::ostream &stream, const Numcpp<T> &m)
+        {
+            stream << '(' << m.row << ',' << m.col << ')' << "[\n";
+            for (size_t i = 0; i < m.row; ++i)
+            {
+                stream << "    [" << i << "][";
+                for (size_t j = 0; j < m.col; ++j)
+                {
+                    stream << (T)(m.matrix[i][j]) << (j == m.col - 1 ? "]\n" : " , ");
+                }
+            }
+            stream << "]\n";
+            return stream;
+        }
     };
-};
-template <typename T>
-oper_object<T> operator<(const Numcpp<T> &A, T (*function_object)(T A, T B))
-{
-    oper_object<T> oper(A, function_object);
-    return oper;
-}
-template <typename T>
-Numcpp<T> operator>(const oper_object<T> &oper, const Numcpp<T> &B)
-{
-    // A.col = B.row
-    if (oper.col != B.row)
+    // matrix special operate
+    template <typename T>
+    class oper_object
     {
-        throw std::invalid_argument("Invalid Matrix");
-    }
-    else
-    {
-        Numcpp<T> result(oper.row * B.col, B.row);
-        for (size_t i = 0; i < B.col; i++)
+    public:
+        size_t row, col;
+        T **matrix;
+        T (*function_object)(T A, T B);
+        oper_object(const Numcpp<T> &A, T (*function_object)(T A, T B))
         {
-            for (size_t j = 0; j < oper.row; j++)
+            this->row = A.row;
+            this->col = A.col;
+            this->matrix = (A.matrix);
+            this->function_object = function_object;
+        };
+    };
+    template <typename T>
+    oper_object<T> operator<(const Numcpp<T> &A, T (*function_object)(T A, T B))
+    {
+        oper_object<T> oper(A, function_object);
+        return oper;
+    }
+    template <typename T>
+    Numcpp<T> operator>(const oper_object<T> &oper, const Numcpp<T> &B)
+    {
+        // A.col = B.row
+        if (oper.col != B.row)
+        {
+            throw std::invalid_argument("Invalid Matrix");
+        }
+        else
+        {
+            Numcpp<T> result(oper.row * B.col, B.row);
+            for (size_t i = 0; i < B.col; i++)
             {
-                for (size_t k = 0; k < oper.col; k++)
+                for (size_t j = 0; j < oper.row; j++)
                 {
-                    result.matrix[j + i * oper.row][k] = oper.function_object((oper.matrix)[j][k], B.matrix[k][i]);
+                    for (size_t k = 0; k < oper.col; k++)
+                    {
+                        result.matrix[j + i * oper.row][k] = oper.function_object((oper.matrix)[j][k], B.matrix[k][i]);
+                    }
                 }
+            }
+            return result;
+        }
+    }
+    template <typename T>
+    Numcpp<T> operator>(const oper_object<T> &oper, void *data)
+    {
+        Numcpp<T> result(oper.row, oper.col);
+        for (size_t i = 0; i < oper.row; i++)
+        {
+            for (size_t j = 0; j < oper.col; j++)
+            {
+                result[i][j] = oper.function_object((oper.matrix)[i][j], (T)0);
             }
         }
         return result;
     }
-}
-template <typename T>
-Numcpp<T> operator>(const oper_object<T> &oper, void *data)
-{
-    Numcpp<T> result(oper.row, oper.col);
-    for (size_t i = 0; i < oper.row; i++)
-    {
-        for (size_t j = 0; j < oper.col; j++)
-        {
-            result[i][j] = oper.function_object((oper.matrix)[i][j], (T)0);
-        }
-    }
-    return result;
-}
 
-// defined in class functions
-template <typename T>
-Numcpp<T>::Numcpp(const size_t _row, const size_t _col)
-{
-    if (_row == 0 || _col == 0)
+    // defined in class functions
+    template <typename T>
+    Numcpp<T>::Numcpp(const size_t _row, const size_t _col)
     {
-        throw "Invalid creation";
-    }
-    else
-    {
-        row = _row;
-        col = _col;
-        matrix = new T *[_row];
-        if (this->optimization == false)
+        if (_row == 0 || _col == 0)
         {
-            for (size_t i = 0; i < _row; i++)
-            {
-                matrix[i] = new T[_col];
-                for (size_t j = 0; j < _col; j++)
-                {
-                    matrix[i][j] = (T)1;
-                }
-            }
+            throw "Invalid creation";
         }
         else
         {
-            units::Alloc_thread_worker<T>(matrix, _row, _col, this->maxprocs, [](T **a, size_t i, size_t j)
-                                          { a[i][j] = (T)1; });
-        }
-    }
-}
-template <typename T>
-inline Numcpp<T>::Numcpp(const size_t _row, const size_t _col, T value)
-{
-    if (_row == 0 || _col == 0)
-    {
-        throw "Invalid creation";
-    }
-    else
-    {
-        row = _row;
-        col = _col;
-        matrix = new T *[_row];
-        if (this->optimization == false)
-        {
-            for (size_t i = 0; i < _row; i++)
+            row = _row;
+            col = _col;
+            matrix = new T *[_row];
+            if (this->optimization == false)
             {
-                matrix[i] = new T[_col];
-                for (size_t j = 0; j < _col; j++)
+                for (size_t i = 0; i < _row; i++)
                 {
-                    matrix[i][j] = value;
+                    matrix[i] = new T[_col];
+                    for (size_t j = 0; j < _col; j++)
+                    {
+                        matrix[i][j] = (T)1;
+                    }
                 }
             }
+            else
+            {
+                units::Alloc_thread_worker<T>(matrix, _row, _col, this->maxprocs, [](T **a, size_t i, size_t j)
+                                              { a[i][j] = (T)1; });
+            }
+        }
+    }
+    template <typename T>
+    inline Numcpp<T>::Numcpp(const size_t _row, const size_t _col, T value)
+    {
+        if (_row == 0 || _col == 0)
+        {
+            throw "Invalid creation";
         }
         else
         {
-            units::Alloc_thread_worker<T>(matrix, _row, _col, this->maxprocs, [value](T **a, size_t i, size_t j)
-                                          { a[i][j] = value; });
-        }
-    }
-}
-template <typename T>
-inline Numcpp<T>::Numcpp(const T **mat, const size_t _row, const size_t _col)
-{
-    if (_row == 0 || _col == 0)
-    {
-        throw "Invalid creation";
-    }
-    else
-    {
-        row = _row;
-        col = _col;
-        matrix = new T *[_row];
-        if (this->optimization == false)
-        {
-            for (size_t i = 0; i < _row; i++)
+            row = _row;
+            col = _col;
+            matrix = new T *[_row];
+            if (this->optimization == false)
             {
-                matrix[i] = new T[_col];
-                for (size_t j = 0; j < _col; j++)
+                for (size_t i = 0; i < _row; i++)
                 {
-                    matrix[i][j] = mat[i][j];
+                    matrix[i] = new T[_col];
+                    for (size_t j = 0; j < _col; j++)
+                    {
+                        matrix[i][j] = value;
+                    }
                 }
             }
+            else
+            {
+                units::Alloc_thread_worker<T>(matrix, _row, _col, this->maxprocs, [value](T **a, size_t i, size_t j)
+                                              { a[i][j] = value; });
+            }
+        }
+    }
+    template <typename T>
+    inline Numcpp<T>::Numcpp(const T **mat, const size_t _row, const size_t _col)
+    {
+        if (_row == 0 || _col == 0)
+        {
+            throw "Invalid creation";
         }
         else
         {
-            units::Copy_thread_worker<T>(matrix, _row, _col, mat, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
-                                         { a[i][j] = b[i][j]; });
-        }
-    }
-}
-template <typename T>
-Numcpp<T>::Numcpp(const Numcpp<T> &other)
-{
-    if (other.row == 0 || other.col == 0)
-    {
-        throw std::invalid_argument("Invalid Matrix");
-    }
-    else
-    {
-        row = other.row;
-        col = other.col;
-        matrix = new T *[row];
-        if (this->optimization == false)
-        {
-            for (size_t i = 0; i < row; i++)
+            row = _row;
+            col = _col;
+            matrix = new T *[_row];
+            if (this->optimization == false)
             {
-                matrix[i] = new T[col];
-                for (size_t j = 0; j < col; j++)
+                for (size_t i = 0; i < _row; i++)
                 {
-                    matrix[i][j] = other.matrix[i][j];
+                    matrix[i] = new T[_col];
+                    for (size_t j = 0; j < _col; j++)
+                    {
+                        matrix[i][j] = mat[i][j];
+                    }
                 }
             }
+            else
+            {
+                units::Copy_thread_worker<T>(matrix, _row, _col, mat, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
+                                             { a[i][j] = b[i][j]; });
+            }
+        }
+    }
+    template <typename T>
+    Numcpp<T>::Numcpp(const Numcpp<T> &other)
+    {
+        if (other.row == 0 || other.col == 0)
+        {
+            throw std::invalid_argument("Invalid Matrix");
         }
         else
         {
-            units::Copy_thread_worker<T>(matrix, this->row, this->col, other.matrix, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
-                                         { a[i][j] = b[i][j]; });
+            row = other.row;
+            col = other.col;
+            matrix = new T *[row];
+            if (this->optimization == false)
+            {
+                for (size_t i = 0; i < row; i++)
+                {
+                    matrix[i] = new T[col];
+                    for (size_t j = 0; j < col; j++)
+                    {
+                        matrix[i][j] = other.matrix[i][j];
+                    }
+                }
+            }
+            else
+            {
+                units::Copy_thread_worker<T>(matrix, this->row, this->col, other.matrix, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
+                                             { a[i][j] = b[i][j]; });
+            }
         }
     }
-}
-template <typename T>
-Numcpp<T>::~Numcpp()
-{
-    for (size_t i = 0; i < this->row; i++)
-    {
-        delete matrix[i];
-    }
-    delete[] matrix;
-}
-template <typename T>
-Numcpp<T> Numcpp<T>::transpose()
-{
-    Numcpp<T> result(this->col, this->row);
-    if (this->optimization == false)
+    template <typename T>
+    Numcpp<T>::~Numcpp()
     {
         for (size_t i = 0; i < this->row; i++)
         {
-            for (size_t j = 0; j < this->col; j++)
-            {
-                result.matrix[j][i] = this->matrix[i][j];
-            }
+            delete matrix[i];
         }
+        delete[] matrix;
     }
-    else
+    template <typename T>
+    Numcpp<T> Numcpp<T>::transpose()
     {
-        units::AB_thread_worker<T>(this->matrix, this->row, this->col, result.matrix, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
-                                   { b[j][i] = a[i][j]; });
-    }
-    return result;
-}
-template <typename T>
-void Numcpp<T>::transposed()
-{
-    size_t x = this->col;
-    size_t y = this->row;
-    T **temp = new T *[x];
-
-    if (this->optimization == false)
-    {
-        for (size_t i = 0; i < x; i++)
-        {
-            temp[i] = new T[y];
-            for (size_t j = 0; j < y; j++)
-            {
-                temp[i][j] = this->matrix[j][i];
-            }
-        }
-    }
-    else
-    {
-        for (size_t i = 0; i < x; i++)
-        {
-            temp[i] = new T[y];
-        }
-        units::AB_thread_worker<T>(this->matrix, this->row, this->col, temp, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
-                                   { b[j][i] = a[i][j]; });
-    }
-
-    for (size_t i = 0; i < this->row; i++)
-    {
-        delete matrix[i];
-    }
-    delete[] matrix;
-
-    this->matrix = temp;
-    this->col = y;
-    this->row = x;
-}
-template <typename T>
-void Numcpp<T>::Hadamard_self(const Numcpp<T> &other)
-{
-    if (other.row != this->row || other.col != this->col)
-    {
-        throw std::invalid_argument("Invalid Matrix");
-    }
-    else
-    {
+        Numcpp<T> result(this->col, this->row);
         if (this->optimization == false)
         {
             for (size_t i = 0; i < this->row; i++)
             {
                 for (size_t j = 0; j < this->col; j++)
                 {
-                    this->matrix[i][j] *= other.matrix[i][j];
+                    result.matrix[j][i] = this->matrix[i][j];
                 }
             }
         }
         else
         {
-            units::AB_thread_worker<T>(this->matrix, this->row, this->col, other.matrix, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
-                                       { a[i][j] *= b[i][j]; });
+            units::AB_thread_worker<T>(this->matrix, this->row, this->col, result.matrix, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
+                                       { b[j][i] = a[i][j]; });
         }
-    }
-}
-template <typename T>
-Numcpp<T> Numcpp<T>::Hadamard(const Numcpp<T> &other)
-{
-    if (other.row != this->row || other.col != this->col)
-    {
-        throw std::invalid_argument("Invalid Matrix");
-    }
-    else
-    {
-        Numcpp<T> result(other);
-        result.Hadamard_self(*this);
         return result;
     }
-}
+    template <typename T>
+    void Numcpp<T>::transposed()
+    {
+        size_t x = this->col;
+        size_t y = this->row;
+        T **temp = new T *[x];
+
+        if (this->optimization == false)
+        {
+            for (size_t i = 0; i < x; i++)
+            {
+                temp[i] = new T[y];
+                for (size_t j = 0; j < y; j++)
+                {
+                    temp[i][j] = this->matrix[j][i];
+                }
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < x; i++)
+            {
+                temp[i] = new T[y];
+            }
+            units::AB_thread_worker<T>(this->matrix, this->row, this->col, temp, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
+                                       { b[j][i] = a[i][j]; });
+        }
+
+        for (size_t i = 0; i < this->row; i++)
+        {
+            delete matrix[i];
+        }
+        delete[] matrix;
+
+        this->matrix = temp;
+        this->col = y;
+        this->row = x;
+    }
+    template <typename T>
+    void Numcpp<T>::Hadamard_self(const Numcpp<T> &other)
+    {
+        if (other.row != this->row || other.col != this->col)
+        {
+            throw std::invalid_argument("Invalid Matrix");
+        }
+        else
+        {
+            if (this->optimization == false)
+            {
+                for (size_t i = 0; i < this->row; i++)
+                {
+                    for (size_t j = 0; j < this->col; j++)
+                    {
+                        this->matrix[i][j] *= other.matrix[i][j];
+                    }
+                }
+            }
+            else
+            {
+                units::AB_thread_worker<T>(this->matrix, this->row, this->col, other.matrix, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
+                                           { a[i][j] *= b[i][j]; });
+            }
+        }
+    }
+    template <typename T>
+    Numcpp<T> Numcpp<T>::Hadamard(const Numcpp<T> &other)
+    {
+        if (other.row != this->row || other.col != this->col)
+        {
+            throw std::invalid_argument("Invalid Matrix");
+        }
+        else
+        {
+            Numcpp<T> result(other);
+            result.Hadamard_self(*this);
+            return result;
+        }
+    }
+
+} // namespace np

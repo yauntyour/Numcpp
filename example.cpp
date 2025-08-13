@@ -2,6 +2,9 @@
 #include <math.h>
 #include <complex>
 #include "Numcpp.hpp"
+
+using namespace np;
+
 // 复数
 typedef std::complex<double> complex_double;
 
@@ -36,6 +39,8 @@ nc_t sigmoid(nc_t n, nc_t m)
 
 int main(int argc, char const *argv[])
 {
+    // 开启多核优化
+    np::is_optimized = true;
     /*使用Numcpp<type> np(row,col)创建一个row * col的矩阵*/
     Numcpp<nc_t> n(16, 16), m(16, 16);
 

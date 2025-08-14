@@ -658,39 +658,66 @@ namespace np
         Numcpp(const dataType **mat, const size_t _row, const size_t _col);
 // operators
 #if CUDA_CHECK
+        // 修改后的 to 方法
         void to(const int device)
         {
             if (device == DEVICE_CUDA)
             {
                 if (device_data == nullptr)
                 {
-                    size_t pitch;
-                    cudaMallocPitch(device_data, &pitch, col * sizeof(dataType), row);
-                    cudaMemcpy2D(device_data, pitch, matrix, col * sizeof(dataType), col * sizeof(dataType), row, cudaMemcpyHostToDevice);
-                    printf("D_p:%p\n", device_data);
-                }
-                else
-                {
-                    cudaMemcpy2D(device_data, col * sizeof(dataType), matrix, col * sizeof(dataType), col * sizeof(dataType), row, cudaMemcpyHostToDevice);
-                    printf("D_p:%p\n", device_data);
+                    // 分配设备上的行指针数组
+                    cudaMalloc((void **)&device_data, row * sizeof(dataType *));
+
+                    // 分配每行的设备内存
+                    dataType **host_row_ptrs = new dataType *[row];
+                    for (size_t i = 0; i < row; ++i)
+                    {
+                        cudaMalloc((void **)&host_row_ptrs[i], col * sizeof(dataType));
+                        cudaMemcpy(host_row_ptrs[i], matrix[i], col * sizeof(dataType), cudaMemcpyHostToDevice);
+                    }
+
+                    // 拷贝行指针数组到设备
+                    cudaMemcpy(device_data, host_row_ptrs, row * sizeof(dataType *), cudaMemcpyHostToDevice);
+                    delete[] host_row_ptrs;
                 }
                 mem_stat = true;
             }
             else if (device == DEVICE_LOCAL)
             {
-                cudaMemcpy2D(matrix, col * sizeof(dataType), device_data, col * sizeof(dataType), col * sizeof(dataType), row, cudaMemcpyDeviceToHost);
-                printf("D_p:%p\n", device_data);
-                printf("H_p:%p\n", matrix);
-            }
-            else
-            {
-                std::invalid_argument("Invalid Device");
+                if (device_data)
+                {
+                    // 从设备复制数据回主机
+                    dataType **host_row_ptrs = new dataType *[row];
+                    cudaMemcpy(host_row_ptrs, device_data, row * sizeof(dataType *), cudaMemcpyDeviceToHost);
+
+                    for (size_t i = 0; i < row; ++i)
+                    {
+                        cudaMemcpy(matrix[i], host_row_ptrs[i], col * sizeof(dataType), cudaMemcpyDeviceToHost);
+                    }
+                    delete[] host_row_ptrs;
+                }
             }
         };
         void cuda_free()
         {
-            cudaFree(device_data);
-            mem_stat = false;
+            if (device_data)
+            {
+                // 首先获取行指针数组
+                dataType **host_row_ptrs = new dataType *[row];
+                cudaMemcpy(host_row_ptrs, device_data, row * sizeof(dataType *), cudaMemcpyDeviceToHost);
+
+                // 释放每行内存
+                for (size_t i = 0; i < row; ++i)
+                {
+                    cudaFree(host_row_ptrs[i]);
+                }
+
+                // 释放行指针数组
+                cudaFree(device_data);
+                device_data = nullptr;
+                delete[] host_row_ptrs;
+                mem_stat = false;
+            }
         }
 #endif
 
@@ -1334,10 +1361,7 @@ namespace np
     Numcpp<T>::~Numcpp()
     {
 #if CUDA_CHECK
-        if (mem_stat == true)
-        {
-            cudaFree(device_data);
-        }
+        cuda_free();
         for (size_t i = 0; i < this->row; i++)
         {
             delete matrix[i];

@@ -1,12 +1,205 @@
-#include <iostream>
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
-#include <complex>
 #include <math.h>
+#include <iostream>
 #include <thread>
 #include <functional>
-#include <vector>
+#include <type_traits>
+#include <complex>
+#define NP_PI 3.14159265358979
 
+#define CUDA_CHECK __has_include(<cuda.h>)
+
+// cuda code
+#if CUDA_CHECK
+#include <cuda_runtime.h>
+#include <device_launch_parameters.h>
+#include <cuComplex.h>
+#define DEVICE_CUDA 1
+#define DEVICE_LOCAL 0
+namespace cuda_op
+{
+    template <typename T>
+    using func_At = T (*)(T);
+    template <typename T>
+    using func_Bt = T (*)(T, T);
+    template <typename T>
+    using func_Ct = T (*)(T, T, T);
+
+    // x + y
+    template <typename T>
+    __device__ T add_opB(T x, T y)
+    {
+        return x + y;
+    }
+
+    // x - y
+    template <typename T>
+    __device__ T cut_opB(T x, T y)
+    {
+        return x - y;
+    }
+    // x * y
+    template <typename T>
+    __device__ T mul_opB(T x, T y)
+    {
+        return x * y;
+    }
+    // x / y (y != 0)
+    template <typename T>
+    __device__ T div_opB(T x, T y)
+    {
+        return x / y;
+    }
+
+    // x = y + z
+    template <typename T>
+    __device__ T add_opC(T x, T y, T z)
+    {
+        return y + z;
+    }
+    // x = y - z
+    template <typename T>
+    __device__ T cut_opC(T x, T y, T z)
+    {
+        return y - z;
+    }
+
+    template <typename T>
+    __global__ static void kernel_cuda_opA(T **mat, size_t rows, size_t cols, size_t n, func_At<T> op)
+    {
+        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+        if (idx < n)
+        {
+            size_t r = idx / cols;
+            size_t c = idx % cols;
+            T *row = mat[r];
+            row[c] = op(row[c]);
+        }
+    }
+    template <typename T>
+    __global__ static void kernel_cuda_memset(T **mat, T value, size_t rows, size_t cols, size_t n, func_Bt<T> op)
+    {
+        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+        if (idx < n)
+        {
+            size_t r = idx / cols;
+            size_t c = idx % cols;
+            T *row = mat[r];
+            row[c] = op(row[c], value);
+        }
+    }
+    template <typename T>
+    __global__ static void kernel_cuda_opAB(T **a, T **b, size_t rows, size_t cols, size_t n, func_Bt<T> op)
+    {
+        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+        if (idx < n)
+        {
+            size_t r = idx / cols;
+            size_t c = idx % cols;
+            T *a_row = a[r];
+            T *b_row = b[r];
+            a_row[c] = op(a_row[c], b_row[c]);
+        }
+    }
+
+    template <typename T>
+    __global__ static void kernel_cuda_opABC(T **a, T **b, T **c, size_t rows, size_t cols, size_t n, func_Ct<T> op)
+    {
+        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+        if (idx < n)
+        {
+            size_t r = idx / cols;
+            size_t col = idx % cols;
+            T *a_row = a[r];
+            T *b_row = b[r];
+            T *c_row = c[r];
+            a_row[col] = op(a_row[col], b_row[col], c_row[col]);
+        }
+    }
+    template <typename T>
+    void cuda_iterator(T **a, size_t rows_, size_t cols_, func_At<T> op)
+    {
+        constexpr size_t block_size = 256;
+        size_t size_ = rows_ * cols_;
+        const size_t grid_size = (size_ + block_size - 1) / block_size;
+
+        kernel_cuda_opA<T><<<grid_size, block_size>>>(a, rows_, cols_, size_, op);
+        cudaDeviceSynchronize();
+    }
+
+    template <typename T>
+    void cuda_memset(T **a, T value, size_t rows_, size_t cols_, func_Bt<T> op)
+    {
+        constexpr size_t block_size = 256;
+        size_t size_ = rows_ * cols_;
+        const size_t grid_size = (size_ + block_size - 1) / block_size;
+
+        kernel_cuda_memset<T><<<grid_size, block_size>>>(a, value, rows_, cols_, size_, op);
+        cudaDeviceSynchronize();
+    }
+
+    template <typename T>
+    void cuda_iterator(T **a, T **b, size_t rows_, size_t cols_, func_Bt<T> op)
+    {
+
+        constexpr size_t block_size = 256;
+        size_t size_ = rows_ * cols_;
+        const size_t grid_size = (size_ + block_size - 1) / block_size;
+
+        kernel_cuda_opAB<T><<<grid_size, block_size>>>(a, b, rows_, cols_, size_, op);
+        cudaDeviceSynchronize();
+    }
+
+    template <typename T>
+    void cuda_iterator(T **a, T **b, T **c, size_t rows_, size_t cols_, func_Ct<T> op)
+    {
+        constexpr size_t block_size = 256;
+        size_t size_ = rows_ * cols_;
+        const size_t grid_size = (size_ + block_size - 1) / block_size;
+
+        kernel_cuda_opABC<T><<<grid_size, block_size>>>(a, b, c, rows_, cols_, size_, op);
+        cudaDeviceSynchronize();
+    }
+
+    template <typename T>
+    __global__ void kernel_gemm(T **A, T **B, T **C,
+                                size_t M, size_t N, size_t K,
+                                T alpha, T beta)
+    {
+        size_t row = blockIdx.y * blockDim.y + threadIdx.y;
+        size_t col = blockIdx.x * blockDim.x + threadIdx.x;
+
+        if (row < M && col < K)
+        {
+            T sum = 0;
+            for (size_t i = 0; i < N; ++i)
+            {
+                T *A_row = A[row];
+                T *B_row = B[i];
+                sum += A_row[i] * B_row[col];
+            }
+            T *C_row = C[row];
+            C_row[col] = alpha * sum + beta * C_row[col];
+        }
+    }
+    // 矩阵乘法 - 使用迭代器优化的CUDA实现
+    template <typename T>
+    void gemm(T **A, size_t A_row, size_t A_col, T **B, size_t B_col, T **C,
+              T alpha = 1.0, T beta = 0.0)
+    {
+        constexpr size_t block_size = 16;
+        dim3 block(block_size, block_size);
+        dim3 grid((B_col + block_size - 1) / block_size,
+                  (A_row + block_size - 1) / block_size);
+
+        kernel_gemm<T><<<grid, block>>>(A, B, C, A_row, A_col, B_col,
+                                        alpha, beta);
+        cudaDeviceSynchronize();
+    }
+} // namespace cuda_iterator
+#endif
 namespace units
 {
     template <typename T>
@@ -27,51 +220,62 @@ namespace units
                 b = (b << 1) + (a & 1); // b存储当前下标的回文值
                 a = a >> 1;
             }
-            if (b > i) // 避免重复交换
-            {
-                std::complex<T> temp;
-                temp = (*x)[i];
+            if (b > i)
+            { // 避免重复交换
+                std::complex<T> temp = (*x)[i];
                 (*x)[i] = (*x)[b];
                 (*x)[b] = temp;
             }
         }
     }
     template <typename T>
-    void fft(std::complex<T> **x, size_t size, std::complex<T> **X, size_t inv)
+    void fft(std::complex<T> **x, size_t size, std::complex<T> **X, int inv)
     {
-        std::complex<T> *Wn = new std::complex<T>[size]; // 这里可以自己新建长度为size的数组
+        // 分配旋转因子数组
+        std::complex<T> *Wn = new std::complex<T>[size];
         for (size_t i = 0; i < size; i++)
         {
-            (*X)[i] = (*x)[i];
-            long double real = cos(-2 * M_PI * i / size);
-            long double img = inv * sin(-2 * M_PI * i / size);
-            Wn[i] = std::complex<T>(real, img); // 初始化Wn
+            T angle = static_cast<T>(-2 * NP_PI * i / size);
+            Wn[i] = std::complex<T>(cos(angle), inv * sin(angle));
         }
-        std::complex<T> *p = (*X);
-        trans(&p, size); // 位反转置换
-        size_t t;
-        for (size_t m = 2; m <= size; m *= 2) // 小序列点数
+
+        // 复制输入到输出（支持原位计算）
+        if (x != X)
         {
-            for (size_t k = 0; k < size; k += m) // 小序列起始下标
+            for (size_t i = 0; i < size; i++)
             {
-                for (size_t j = 0; j < m / 2; j++) // 小序列的DFT计算
+                (*X)[i] = (*x)[i];
+            }
+        }
+
+        // 位反转置换
+        std::complex<T> *p = *X;
+        trans<T>(&p, size);
+
+        // FFT计算
+        for (size_t m = 2; m <= size; m *= 2)
+        {
+            for (size_t k = 0; k < size; k += m)
+            {
+                for (size_t j = 0; j < m / 2; j++)
                 {
                     size_t index1 = k + j;
                     size_t index2 = index1 + m / 2;
-                    t = j * size / m; // t是在完整序列中的下标，找到对应的旋转因子
-                    std::complex<T> temp1, temp2;
-                    temp2 = (*X)[index2] * Wn[t];
-                    temp1 = (*X)[index1];
-                    (*X)[index1] = temp1 + temp2; // Wn的性质
+                    size_t t = j * size / m; // 旋转因子索引
+                    std::complex<T> temp1 = (*X)[index1];
+                    std::complex<T> temp2 = (*X)[index2] * Wn[t];
+                    (*X)[index1] = temp1 + temp2;
                     (*X)[index2] = temp1 - temp2;
                 }
             }
         }
+
+        delete[] Wn; // 释放旋转因子数组
     }
     /* 添加偏置offset用以支持分块迭代 */
     template <typename T>
-    static void mm_generate(T **this_matrix, T **other_matrix, T **result, const size_t A_row, const size_t B_row,
-                            const size_t A_col, const size_t B_col, const size_t A_row_offset, const size_t A_col_offset, const size_t B_row_offset, const size_t B_col_offset)
+    void mm_generate(T **this_matrix, T **other_matrix, T **result, const size_t A_row, const size_t B_row,
+                     const size_t A_col, const size_t B_col, const size_t A_row_offset, const size_t A_col_offset, const size_t B_row_offset, const size_t B_col_offset)
     {
         for (size_t i = 0; i < A_row; i++)
         {
@@ -85,7 +289,7 @@ namespace units
         }
     };
     template <typename T>
-    static T **mat_create(size_t row, size_t col)
+    T **mat_create(size_t row, size_t col)
     {
         T **matrix = new T *[row];
         for (size_t i = 0; i < row; i++)
@@ -99,7 +303,7 @@ namespace units
         return matrix;
     };
     template <typename T>
-    static void mat_delete(T **mat, size_t row)
+    void mat_delete(T **mat, size_t row)
     {
         for (size_t i = 0; i < row; i++)
         {
@@ -130,8 +334,8 @@ namespace units
      * C22 = U7
      */
     template <typename T>
-    static void mm_Coppersmith_Winograd(T **this_matrix, T **other_matrix, T **result, const size_t A_row, const size_t B_row,
-                                        const size_t A_col, const size_t B_col, const size_t A_row_offset, const size_t A_col_offset, const size_t B_row_offset, const size_t B_col_offset)
+    void mm_Coppersmith_Winograd(T **this_matrix, T **other_matrix, T **result, const size_t A_row, const size_t B_row,
+                                 const size_t A_col, const size_t B_col, const size_t A_row_offset, const size_t A_col_offset, const size_t B_row_offset, const size_t B_col_offset)
     {
         if ((A_row <= 2) || (A_row % 2 != 0 || B_col % 2 != 0 || A_col % 2 != 0))
         {
@@ -232,8 +436,8 @@ namespace units
     }
 
     template <typename T>
-    static void mm_auto(T **this_matrix, T **other_matrix, T **result, const size_t A_row, const size_t B_row,
-                        const size_t A_col, const size_t B_col, const bool fast_flag)
+    void mm_auto(T **this_matrix, T **other_matrix, T **result, const size_t A_row, const size_t B_row,
+                 const size_t A_col, const size_t B_col, const bool fast_flag)
     {
         if ((A_row * B_col * A_col <= 64 * 64 * 64) || (A_row % 2 != 0 || B_col % 2 != 0 || A_col % 2 != 0))
         {
@@ -277,7 +481,7 @@ namespace units
         *sign += black_len_i * black_len_j;
     }
     template <typename T>
-    void atomic_opA(T **a, size_t offset_i, size_t offset_j, size_t black_len_i, size_t black_len_j, size_t *sign, std::function<void(T **, size_t, size_t)> opA)
+    void atomic_op(T **a, size_t offset_i, size_t offset_j, size_t black_len_i, size_t black_len_j, size_t *sign, std::function<void(T **, size_t, size_t)> opA)
     {
         for (size_t i = 0; i < black_len_i; i++)
         {
@@ -289,7 +493,7 @@ namespace units
         *sign += black_len_i * black_len_j;
     }
     template <typename T>
-    void atomic_opAB(T **a, T **b, size_t offset_i, size_t offset_j, size_t black_len_i, size_t black_len_j, size_t *sign, std::function<void(T **, T **, size_t, size_t)> opAB)
+    void atomic_op(T **a, T **b, size_t offset_i, size_t offset_j, size_t black_len_i, size_t black_len_j, size_t *sign, std::function<void(T **, T **, size_t, size_t)> opAB)
     {
         for (size_t i = 0; i < black_len_i; i++)
         {
@@ -301,7 +505,7 @@ namespace units
         *sign += black_len_i * black_len_j;
     }
     template <typename T>
-    void atomic_opABC(T **a, T **b, T **c, size_t offset_i, size_t offset_j, size_t black_len_i, size_t black_len_j, size_t *sign, std::function<void(T **, T **, T **, size_t, size_t)> opABC)
+    void atomic_op(T **a, T **b, T **c, size_t offset_i, size_t offset_j, size_t black_len_i, size_t black_len_j, size_t *sign, std::function<void(T **, T **, T **, size_t, size_t)> opABC)
     {
         for (size_t i = 0; i < black_len_i; i++)
         {
@@ -316,7 +520,7 @@ namespace units
     int Alloc_thread_worker(T **a, size_t a_row, size_t a_col, size_t cpu_thread_max, std::function<void(T **, size_t, size_t)> opA)
     {
         size_t mat_n = sqrt(cpu_thread_max);
-        std::thread t_list[cpu_thread_max];
+        std::thread *t_list = new std::thread[cpu_thread_max];
         size_t black_len_i = a_row / mat_n;
         size_t black_len_j = a_col / mat_n;
         size_t sign = 0;
@@ -336,10 +540,10 @@ namespace units
         return 0;
     }
     template <typename T>
-    int A_thread_worker(T **a, size_t a_row, size_t a_col, size_t cpu_thread_max, std::function<void(T **, size_t, size_t)> opA)
+    int thread_worker(T **a, size_t a_row, size_t a_col, size_t cpu_thread_max, std::function<void(T **, size_t, size_t)> opA)
     {
         size_t mat_n = sqrt(cpu_thread_max);
-        std::thread t_list[cpu_thread_max];
+        std::thread *t_list = new std::thread[cpu_thread_max];
         size_t black_len_i = a_row / mat_n;
         size_t black_len_j = a_col / mat_n;
         size_t sign = 0;
@@ -348,7 +552,7 @@ namespace units
             for (size_t j = 0; j < mat_n; j++)
             {
                 t_list[i * mat_n + j] = std::thread([=, &sign]()
-                                                    { atomic_opA<T>(a, i * black_len_i, j * black_len_j, black_len_i, black_len_j, &sign, opA); });
+                                                    { atomic_op<T>(a, i * black_len_i, j * black_len_j, black_len_i, black_len_j, &sign, opA); });
                 t_list[i * mat_n + j].detach();
             }
         }
@@ -362,7 +566,7 @@ namespace units
     int Copy_thread_worker(T **a, size_t a_row, size_t a_col, T **b, size_t cpu_thread_max, std::function<void(T **, T **, size_t, size_t)> opAB)
     {
         size_t mat_n = sqrt(cpu_thread_max);
-        std::thread t_list[cpu_thread_max];
+        std::thread *t_list = new std::thread[cpu_thread_max];
         size_t black_len_i = a_row / mat_n;
         size_t black_len_j = a_col / mat_n;
         size_t sign = 0;
@@ -382,10 +586,10 @@ namespace units
         return 0;
     }
     template <typename T>
-    int AB_thread_worker(T **a, size_t a_row, size_t a_col, T **b, size_t cpu_thread_max, std::function<void(T **, T **, size_t, size_t)> opAB)
+    int thread_worker(T **a, size_t a_row, size_t a_col, T **b, size_t cpu_thread_max, std::function<void(T **, T **, size_t, size_t)> opAB)
     {
         size_t mat_n = sqrt(cpu_thread_max);
-        std::thread t_list[cpu_thread_max];
+        std::thread *t_list = new std::thread[cpu_thread_max];
         size_t black_len_i = a_row / mat_n;
         size_t black_len_j = a_col / mat_n;
         size_t sign = 0;
@@ -394,7 +598,7 @@ namespace units
             for (size_t j = 0; j < mat_n; j++)
             {
                 t_list[i * mat_n + j] = std::thread([=, &sign]()
-                                                    { atomic_opAB<T>(a, b, i * black_len_i, j * black_len_j, black_len_i, black_len_j, &sign, opAB); });
+                                                    { atomic_op<T>(a, b, i * black_len_i, j * black_len_j, black_len_i, black_len_j, &sign, opAB); });
                 t_list[i * mat_n + j].detach();
             }
         }
@@ -405,10 +609,10 @@ namespace units
         return 0;
     }
     template <typename T>
-    int ABC_thread_worker(T **a, size_t a_row, size_t a_col, T **b, T **c, size_t cpu_thread_max, std::function<void(T **, T **, T **, size_t, size_t)> opABC)
+    int thread_worker(T **a, size_t a_row, size_t a_col, T **b, T **c, size_t cpu_thread_max, std::function<void(T **, T **, T **, size_t, size_t)> opABC)
     {
         size_t mat_n = sqrt(cpu_thread_max);
-        std::thread t_list[cpu_thread_max];
+        std::thread *t_list = new std::thread[cpu_thread_max];
         size_t black_len_i = a_row / mat_n;
         size_t black_len_j = a_col / mat_n;
         size_t sign = 0;
@@ -417,7 +621,7 @@ namespace units
             for (size_t j = 0; j < mat_n; j++)
             {
                 t_list[i * mat_n + j] = std::thread([=, &sign]()
-                                                    { atomic_opABC<T>(a, b, c, i * black_len_i, j * black_len_j, black_len_i, black_len_j, &sign, opABC); });
+                                                    { atomic_op<T>(a, b, c, i * black_len_i, j * black_len_j, black_len_i, black_len_j, &sign, opABC); });
                 t_list[i * mat_n + j].detach();
             }
         }
@@ -431,10 +635,8 @@ namespace units
 }; // namespace units
 namespace np
 {
-
     static bool is_optimized = false;
     static size_t MAX_thread = 1;
-
     template <typename dataType>
     class Numcpp
     {
@@ -445,13 +647,55 @@ namespace np
     public:
         dataType **matrix;
         size_t row, col;
+#if CUDA_CHECK
+        bool mem_stat = false;
+        bool MUL_GPU = true;
+        dataType **device_data;
+#endif
         Numcpp(const size_t _row, const size_t _col);
         Numcpp(const size_t _row, const size_t _col, dataType value);
         Numcpp(const Numcpp<dataType> &other);
         Numcpp(const dataType **mat, const size_t _row, const size_t _col);
-        /*
-        operators
-        */
+// operators
+#if CUDA_CHECK
+        void to(const int device)
+        {
+            if (device == DEVICE_CUDA)
+            {
+                if (device_data == nullptr)
+                {
+                    size_t pitch;
+                    cudaMallocPitch(device_data, &pitch, col * sizeof(dataType), row);
+                    cudaMemcpy2D(device_data, pitch, matrix, col * sizeof(dataType), col * sizeof(dataType), row, cudaMemcpyHostToDevice);
+                }
+                else
+                {
+                    for (size_t i = 0; i < row; i++)
+                    {
+                        cudaMemcpy2D(device_data, col * sizeof(dataType), matrix, col * sizeof(dataType), col * sizeof(dataType), row, cudaMemcpyHostToDevice);
+                    }
+                }
+                mem_stat = true;
+            }
+            else if (device == DEVICE_LOCAL)
+            {
+                for (size_t i = 0; i < row; i++)
+                {
+                    cudaMemcpy2D(matrix, col * sizeof(dataType), device_data, col * sizeof(dataType), col * sizeof(dataType), row, cudaMemcpyHostToDevice);
+                }
+            }
+            else
+            {
+                std::invalid_argument("Invalid Device");
+            }
+        };
+        void cuda_free()
+        {
+            cudaFree(device_data);
+            mem_stat = false;
+        }
+#endif
+
         void operator=(const Numcpp<dataType> &other)
         {
             if (other.row != this->row || other.col != this->col)
@@ -472,8 +716,8 @@ namespace np
                 }
                 else
                 {
-                    units::AB_thread_worker<dataType>(this->matrix, this->row, this->col, other.matrix, this->maxprocs, [](dataType **a, dataType **b, size_t i, size_t j)
-                                                      { a[i][j] = b[i][j]; });
+                    units::thread_worker<dataType>(this->matrix, this->row, this->col, other.matrix, this->maxprocs, [](dataType **a, dataType **b, size_t i, size_t j)
+                                                   { a[i][j] = b[i][j]; });
                 }
             }
         }
@@ -497,8 +741,19 @@ namespace np
                 }
                 else
                 {
-                    units::AB_thread_worker<dataType>(this->matrix, this->row, this->col, other.matrix, this->maxprocs, [](dataType **a, dataType **b, size_t i, size_t j)
-                                                      { a[i][j] += b[i][j]; });
+#if CUDA_CHECK
+                    if (this->mem_stat == true && other.mem_stat == true)
+                    {
+                        cuda_op::cuda_iterator<dataType>(this->device_data, row, col, cuda_op::add_opB);
+                    }
+                    else
+                    {
+                        throw std::invalid_argument("Invalid Matrix Device: Both parties involved in the operation should be on the same device.");
+                    }
+#else
+                    units::thread_worker<dataType>(this->matrix, this->row, this->col, other.matrix, this->maxprocs, [](dataType **a, dataType **b, size_t i, size_t j)
+                                                   { a[i][j] += b[i][j]; });
+#endif
                 }
             }
         }
@@ -523,9 +778,21 @@ namespace np
                 }
                 else
                 {
+#if CUDA_CHECK
+                    if (this->mem_stat == true && other.mem_stat == true)
+                    {
+                        result.to(DEVICE_CUDA);
+                        cuda_op::cuda_iterator<dataType>(result.device_data, this->device_data, other.device_data, row, col, cuda_op::add_opC);
+                    }
+                    else
+                    {
+                        throw std::invalid_argument("Invalid Matrix Device: Both parties involved in the operation should be on the same device.");
+                    }
+#else
                     dataType **temp = other.matrix;
-                    units::ABC_thread_worker<dataType>(this->matrix, this->row, this->col, temp, result.matrix, this->maxprocs, [](dataType **a, dataType **b, dataType **c, size_t i, size_t j)
-                                                       { c[i][j] = a[i][j] + b[i][j]; });
+                    units::thread_worker<dataType>(this->matrix, this->row, this->col, temp, result.matrix, this->maxprocs, [](dataType **a, dataType **b, dataType **c, size_t i, size_t j)
+                                                   { c[i][j] = a[i][j] + b[i][j]; });
+#endif
                 }
                 return result;
             }
@@ -550,8 +817,19 @@ namespace np
                 }
                 else
                 {
-                    units::AB_thread_worker<dataType>(this->matrix, this->row, this->col, other.matrix, this->maxprocs, [](dataType **a, dataType **b, size_t i, size_t j)
-                                                      { a[i][j] -= b[i][j]; });
+#if CUDA_CHECK
+                    if (this->mem_stat == true && other.mem_stat == true)
+                    {
+                        cuda_op::cuda_iterator<dataType>(this->device_data, other.device_data, row, col, cuda_op::cut_opB);
+                    }
+                    else
+                    {
+                        throw std::invalid_argument("Invalid Matrix Device: Both parties involved in the operation should be on the same device.");
+                    }
+#else
+                    units::thread_worker<dataType>(this->matrix, this->row, this->col, other.matrix, this->maxprocs, [](dataType **a, dataType **b, size_t i, size_t j)
+                                                   { a[i][j] -= b[i][j]; });
+#endif
                 }
             }
         }
@@ -576,30 +854,56 @@ namespace np
                 }
                 else
                 {
+#if CUDA_CHECK
+                    if (this->mem_stat == true && other.mem_stat == true)
+                    {
+                        result.to(DEVICE_CUDA);
+                        cuda_op::cuda_iterator<dataType>(result.device_data, this->device_data, other.device_data, row, col, cuda_op::cut_opC);
+                    }
+                    else
+                    {
+                        throw std::invalid_argument("Invalid Matrix Device: Both parties involved in the operation should be on the same device.");
+                    }
+#else
+
                     dataType **temp = other.matrix;
-                    units::ABC_thread_worker<dataType>(this->matrix, this->row, this->col, temp, result.matrix, this->maxprocs, [](dataType **a, dataType **b, dataType **c, size_t i, size_t j)
-                                                       { c[i][j] = a[i][j] - b[i][j]; });
+                    units::thread_worker<dataType>(this->matrix, this->row, this->col, temp, result.matrix, this->maxprocs, [](dataType **a, dataType **b, dataType **c, size_t i, size_t j)
+                                                   { c[i][j] = a[i][j] + b[i][j]; });
+#endif
                 }
                 return result;
             }
         }
         Numcpp<dataType> operator*(dataType n)
         {
-            Numcpp<dataType> result(this->row, this->col);
+            Numcpp<dataType> result(this->row, this->col, n);
             if (this->optimization == false)
             {
                 for (size_t i = 0; i < this->row; i++)
                 {
                     for (size_t j = 0; j < this->col; j++)
                     {
-                        result.matrix[i][j] = this->matrix[i][j] * n;
+                        result.matrix[i][j] *= this->matrix[i][j];
                     }
                 }
             }
             else
             {
-                units::A_thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
-                                                 { a[i][j] *= n; });
+#if CUDA_CHECK
+                if (this->mem_stat == true)
+                {
+                    result.to(DEVICE_CUDA);
+                    cuda_op::cuda_iterator<dataType>(result.device_data, this->device_data, row, col, cuda_op::mul_opB);
+                }
+                else
+                {
+                    units::thread_worker<dataType>(result.matrix, this->row, this->col, this->matrix, this->maxprocs, [n](dataType **a, dataType **b, size_t i, size_t j)
+                                                   { a[i][j] *= b[i][j]; });
+                }
+#else
+                units::thread_worker<dataType>(result.matrix, this->row, this->col, this->matrix, this->maxprocs, [n](dataType **a, dataType **b, size_t i, size_t j)
+                                               { a[i][j] *= b[i][j]; });
+#endif
             }
             return result;
         }
@@ -617,8 +921,20 @@ namespace np
             }
             else
             {
-                units::A_thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
-                                                 { a[i][j] *= n; });
+#if CUDA_CHECK
+                if (this->mem_stat == true)
+                {
+                    cuda_op::cuda_memset<dataType>(this->device_data, n, row, col, cuda_op::mul_opB);
+                }
+                else
+                {
+                    units::thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
+                                                   { a[i][j] *= n; });
+                }
+#else
+                units::thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
+                                               { a[i][j] *= n; });
+#endif
             }
         }
         Numcpp<dataType> operator/(dataType n)
@@ -636,8 +952,21 @@ namespace np
             }
             else
             {
-                units::A_thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
-                                                 { a[i][j] /= n; });
+#if CUDA_CHECK
+                if (this->mem_stat == true)
+                {
+                    result.to(DEVICE_CUDA);
+                    cuda_op::cuda_iterator<dataType>(result.device_data, this->device_data, row, col, cuda_op::div_opB);
+                }
+                else
+                {
+                    units::thread_worker<dataType>(result.matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
+                                                   { a[i][j] /= n; });
+                }
+#else
+                units::thread_worker<dataType>(result.matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
+                                               { a[i][j] /= n; });
+#endif
             }
             return result;
         }
@@ -655,8 +984,20 @@ namespace np
             }
             else
             {
-                units::A_thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
-                                                 { a[i][j] *= n; });
+#if CUDA_CHECK
+                if (this->mem_stat == true)
+                {
+                    cuda_op::cuda_memset<dataType>(this->device_data, n, row, col, cuda_op::div_opB);
+                }
+                else
+                {
+                    units::thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
+                                                   { a[i][j] /= n; });
+                }
+#else
+                units::thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
+                                               { a[i][j] /= n; });
+#endif
             }
         }
         /*Matrix function complex*/
@@ -670,13 +1011,32 @@ namespace np
             else
             {
                 Numcpp<dataType> result(this->row, other.col, 0);
-                if (this->optimization = true)
+                if (this->optimization == true)
                 {
                     units::mm_auto(this->matrix, other.matrix, result.matrix, this->row, other.row, this->col, other.col, true);
                 }
                 else
                 {
+#if CUDA_CHECK
+                    if (this->MUL_GPU == true)
+                    {
+                        if (this->mem_stat == true && other.mem_stat == true)
+                        {
+                            result.to(DEVICE_CUDA);
+                            cuda_op::gemm<dataType>(this->device_data, this->row, this->col, other.device_data, other.col, result.device_data);
+                        }
+                        else
+                        {
+                            throw std::invalid_argument("Invalid Matrix Device: Both parties involved in the operation should be on the same device.");
+                        }
+                    }
+                    else
+                    {
+                        units::mm_generate(this->matrix, other.matrix, result.matrix, this->row, other.row, this->col, other.row, 0, 0, 0, 0);
+                    }
+#else
                     units::mm_generate(this->matrix, other.matrix, result.matrix, this->row, other.row, this->col, other.row, 0, 0, 0, 0);
+#endif
                 }
                 return result;
             }
@@ -712,49 +1072,64 @@ namespace np
                 this->maxprocs = thread_num;
             }
         }
-        //
+        // delete
         ~Numcpp();
-        void ffted(size_t inv)
+// FFT only the cuda disable can used
+#if !CUDA_CHECK
+        // 正向/反向FFT（返回新矩阵）
+        Numcpp<dataType> fft(int inv)
         {
-            dataType **result = new dataType *[this->row];
-            for (size_t i = 0; i < this->row; i++)
-            {
-                result[i] = new dataType[this->col];
-            }
+            static_assert(
+                std::is_same_v<dataType, std::complex<float>> ||
+                    std::is_same_v<dataType, std::complex<double>>,
+                "FFT requires complex types");
+
+            Numcpp<dataType> result(this->row, this->col);
+            using ValueType = typename dataType::value_type; // 提取底层数值类型
 
             for (size_t i = 0; i < this->row; i++)
             {
-                units::fft(this->matrix + i, this->col, result + i, inv);
+                units::fft<ValueType>(
+                    &(this->matrix[i]),
+                    this->col,
+                    &(result.matrix[i]),
+                    inv);
             }
-            for (size_t i = 0; i < this->row; i++)
-            {
-                for (size_t j = 0; j < this->col; j++)
-                {
-                    if (inv < 0)
-                    {
-                        this->matrix[i][j] = result[i][j];
-                        this->matrix[i][j] /= this->col;
-                    }
-                    else
-                    {
-                        this->matrix[i][j] = result[i][j];
-                    }
-                }
-            }
-        }
-        Numcpp fft(size_t inv)
-        {
-            Numcpp<dataType> result(this->row, this->col);
-            for (size_t i = 0; i < this->row; i++)
-            {
-                units::fft(this->matrix + i, this->col, result.matrix + i, inv);
-            }
+
+            // 逆变换归一化
             if (inv < 0)
             {
-                result *= (1 / this->col);
+                result *= dataType(1.0 / this->col, 0);
             }
             return result;
         }
+
+        // 原地FFT
+        void ffted(int inv)
+        {
+            static_assert(
+                std::is_same_v<dataType, std::complex<float>> ||
+                    std::is_same_v<dataType, std::complex<double>>,
+                "FFT requires complex types");
+
+            using ValueType = typename dataType::value_type;
+            for (size_t i = 0; i < this->row; i++)
+            {
+                // 原地计算（输入输出指向相同内存）
+                units::fft<ValueType>(
+                    &(this->matrix[i]),
+                    this->col,
+                    &(this->matrix[i]),
+                    inv);
+            }
+
+            // 逆变换归一化
+            if (inv < 0)
+            {
+                *this *= dataType(1.0 / this->col, 0);
+            }
+        }
+#endif
 
         template <typename T>
         friend std::ostream &operator<<(std::ostream &stream, const Numcpp<T> &m)
@@ -956,11 +1331,30 @@ namespace np
     template <typename T>
     Numcpp<T>::~Numcpp()
     {
+#if CUDA_CHECK
+        if (mem_stat == true)
+        {
+            for (size_t i = 0; i < this->row; i++)
+            {
+                cudaFree(matrix[i]);
+            }
+            cudaFree(matrix);
+        }
+        else
+        {
+            for (size_t i = 0; i < this->row; i++)
+            {
+                delete matrix[i];
+            }
+            delete[] matrix;
+        }
+#else
         for (size_t i = 0; i < this->row; i++)
         {
             delete matrix[i];
         }
         delete[] matrix;
+#endif
     }
     template <typename T>
     Numcpp<T> Numcpp<T>::transpose()
@@ -978,8 +1372,8 @@ namespace np
         }
         else
         {
-            units::AB_thread_worker<T>(this->matrix, this->row, this->col, result.matrix, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
-                                       { b[j][i] = a[i][j]; });
+            units::thread_worker<T>(this->matrix, this->row, this->col, result.matrix, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
+                                    { b[j][i] = a[i][j]; });
         }
         return result;
     }
@@ -1007,8 +1401,8 @@ namespace np
             {
                 temp[i] = new T[y];
             }
-            units::AB_thread_worker<T>(this->matrix, this->row, this->col, temp, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
-                                       { b[j][i] = a[i][j]; });
+            units::thread_worker<T>(this->matrix, this->row, this->col, temp, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
+                                    { b[j][i] = a[i][j]; });
         }
 
         for (size_t i = 0; i < this->row; i++)
@@ -1042,8 +1436,8 @@ namespace np
             }
             else
             {
-                units::AB_thread_worker<T>(this->matrix, this->row, this->col, other.matrix, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
-                                           { a[i][j] *= b[i][j]; });
+                units::thread_worker<T>(this->matrix, this->row, this->col, other.matrix, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
+                                        { a[i][j] *= b[i][j]; });
             }
         }
     }

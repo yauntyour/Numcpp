@@ -667,22 +667,20 @@ namespace np
                     size_t pitch;
                     cudaMallocPitch(device_data, &pitch, col * sizeof(dataType), row);
                     cudaMemcpy2D(device_data, pitch, matrix, col * sizeof(dataType), col * sizeof(dataType), row, cudaMemcpyHostToDevice);
+                    printf("D_p:%p\n", device_data);
                 }
                 else
                 {
-                    for (size_t i = 0; i < row; i++)
-                    {
-                        cudaMemcpy2D(device_data, col * sizeof(dataType), matrix, col * sizeof(dataType), col * sizeof(dataType), row, cudaMemcpyHostToDevice);
-                    }
+                    cudaMemcpy2D(device_data, col * sizeof(dataType), matrix, col * sizeof(dataType), col * sizeof(dataType), row, cudaMemcpyHostToDevice);
+                    printf("D_p:%p\n", device_data);
                 }
                 mem_stat = true;
             }
             else if (device == DEVICE_LOCAL)
             {
-                for (size_t i = 0; i < row; i++)
-                {
-                    cudaMemcpy2D(matrix, col * sizeof(dataType), device_data, col * sizeof(dataType), col * sizeof(dataType), row, cudaMemcpyHostToDevice);
-                }
+                cudaMemcpy2D(matrix, col * sizeof(dataType), device_data, col * sizeof(dataType), col * sizeof(dataType), row, cudaMemcpyDeviceToHost);
+                printf("D_p:%p\n", device_data);
+                printf("H_p:%p\n", matrix);
             }
             else
             {
@@ -783,6 +781,7 @@ namespace np
                     {
                         result.to(DEVICE_CUDA);
                         cuda_op::cuda_iterator<dataType>(result.device_data, this->device_data, other.device_data, row, col, cuda_op::add_opC);
+                        result.to(DEVICE_LOCAL);
                     }
                     else
                     {
@@ -859,6 +858,7 @@ namespace np
                     {
                         result.to(DEVICE_CUDA);
                         cuda_op::cuda_iterator<dataType>(result.device_data, this->device_data, other.device_data, row, col, cuda_op::cut_opC);
+                        result.to(DEVICE_LOCAL);
                     }
                     else
                     {
@@ -894,6 +894,7 @@ namespace np
                 {
                     result.to(DEVICE_CUDA);
                     cuda_op::cuda_iterator<dataType>(result.device_data, this->device_data, row, col, cuda_op::mul_opB);
+                    result.to(DEVICE_LOCAL);
                 }
                 else
                 {
@@ -957,6 +958,7 @@ namespace np
                 {
                     result.to(DEVICE_CUDA);
                     cuda_op::cuda_iterator<dataType>(result.device_data, this->device_data, row, col, cuda_op::div_opB);
+                    result.to(DEVICE_LOCAL);
                 }
                 else
                 {
@@ -1334,20 +1336,13 @@ namespace np
 #if CUDA_CHECK
         if (mem_stat == true)
         {
-            for (size_t i = 0; i < this->row; i++)
-            {
-                cudaFree(matrix[i]);
-            }
-            cudaFree(matrix);
+            cudaFree(device_data);
         }
-        else
+        for (size_t i = 0; i < this->row; i++)
         {
-            for (size_t i = 0; i < this->row; i++)
-            {
-                delete matrix[i];
-            }
-            delete[] matrix;
+            delete matrix[i];
         }
+        delete[] matrix;
 #else
         for (size_t i = 0; i < this->row; i++)
         {

@@ -168,7 +168,7 @@ Numcpp<nc_t> Out = c<func> e; // 会创建一个新的矩阵
 Numcpp<nc_t> act = result<sigmoid> NULL;
 ```
 
-### FFT
+### FFT（只对复数矩阵有效）
 
 ```c++
 // 矩阵fft
@@ -248,6 +248,44 @@ if (sqrt(thread_num) * sqrt(thread_num) > std::thread::hardware_concurrency() ||
 ```
 
 
+
+# 对Nvidia GPU的CUDA加速支持
+
+提供所有基础操作的CUDA加速：
+
+```c++
+#include <iostream>
+#include "Numcpp.hpp"
+
+using namespace np;
+#define nc_t double
+int main()
+{
+    Numcpp<nc_t> n(16, 16);
+    Numcpp<nc_t> m(16, 8);
+    std::cout << n;
+    std::cout << m;
+    // 上传到GPU
+    n.to(DEVICE_CUDA);
+    m.to(DEVICE_CUDA);
+
+    // 在GPU上操作
+    n *= 2.0; // 广播操作
+    m *= 3.0;
+
+    // 同步回CPU查看结果
+    n.to(DEVICE_LOCAL);
+    m.to(DEVICE_LOCAL);
+    std::cout << n;
+    std::cout << m;
+
+    Numcpp<nc_t> result = n * m;
+    std::cout << result;
+    return 0;
+}
+```
+
+**注：要使用nvcc进行编译**
 
 # 利用矩阵进行神经网络计算示例
 

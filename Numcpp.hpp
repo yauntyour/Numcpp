@@ -126,6 +126,11 @@ namespace cuda_op
         const size_t grid_size = (size_ + block_size - 1) / block_size;
 
         kernel_cuda_opA<T><<<grid_size, block_size>>>(a, rows_, cols_, size_, op);
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess)
+        {
+            std::cerr << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+        }
         cudaDeviceSynchronize();
     }
 
@@ -137,6 +142,11 @@ namespace cuda_op
         const size_t grid_size = (size_ + block_size - 1) / block_size;
 
         kernel_cuda_memset<T><<<grid_size, block_size>>>(a, value, rows_, cols_, size_, op);
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess)
+        {
+            std::cerr << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+        }
         cudaDeviceSynchronize();
     }
 
@@ -149,6 +159,11 @@ namespace cuda_op
         const size_t grid_size = (size_ + block_size - 1) / block_size;
 
         kernel_cuda_opAB<T><<<grid_size, block_size>>>(a, b, rows_, cols_, size_, op);
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess)
+        {
+            std::cerr << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+        }
         cudaDeviceSynchronize();
     }
 
@@ -160,6 +175,11 @@ namespace cuda_op
         const size_t grid_size = (size_ + block_size - 1) / block_size;
 
         kernel_cuda_opABC<T><<<grid_size, block_size>>>(a, b, c, rows_, cols_, size_, op);
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess)
+        {
+            std::cerr << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+        }
         cudaDeviceSynchronize();
     }
 
@@ -650,7 +670,7 @@ namespace np
 #if CUDA_CHECK
         bool mem_stat = false;
         bool MUL_GPU = true;
-        dataType **device_data;
+        dataType **device_data = nullptr;
 #endif
         Numcpp(const size_t _row, const size_t _col);
         Numcpp(const size_t _row, const size_t _col, dataType value);
@@ -680,22 +700,29 @@ namespace np
                     cudaMemcpy(device_data, host_row_ptrs, row * sizeof(dataType *), cudaMemcpyHostToDevice);
                     delete[] host_row_ptrs;
                 }
+                else
+                {
+                    dataType **host_row_ptrs = new dataType *[row];
+                    for (size_t i = 0; i < row; ++i)
+                    {
+                        cudaMalloc((void **)&host_row_ptrs[i], col * sizeof(dataType));
+                        cudaMemcpy(host_row_ptrs[i], matrix[i], col * sizeof(dataType), cudaMemcpyHostToDevice);
+                    }
+                    // 拷贝行指针数组到设备
+                    cudaMemcpy(device_data, host_row_ptrs, row * sizeof(dataType *), cudaMemcpyHostToDevice);
+                }
                 mem_stat = true;
             }
             else if (device == DEVICE_LOCAL)
             {
-                if (device_data)
+                // 从设备复制数据回主机
+                dataType **host_row_ptrs = new dataType *[row];
+                cudaMemcpy(host_row_ptrs, device_data, row * sizeof(dataType *), cudaMemcpyDeviceToHost);
+                for (size_t i = 0; i < row; ++i)
                 {
-                    // 从设备复制数据回主机
-                    dataType **host_row_ptrs = new dataType *[row];
-                    cudaMemcpy(host_row_ptrs, device_data, row * sizeof(dataType *), cudaMemcpyDeviceToHost);
-
-                    for (size_t i = 0; i < row; ++i)
-                    {
-                        cudaMemcpy(matrix[i], host_row_ptrs[i], col * sizeof(dataType), cudaMemcpyDeviceToHost);
-                    }
-                    delete[] host_row_ptrs;
+                    cudaMemcpy(matrix[i], host_row_ptrs[i], col * sizeof(dataType), cudaMemcpyDeviceToHost);
                 }
+                delete[] host_row_ptrs;
             }
         };
         void cuda_free()
@@ -1053,6 +1080,7 @@ namespace np
                         {
                             result.to(DEVICE_CUDA);
                             cuda_op::gemm<dataType>(this->device_data, this->row, this->col, other.device_data, other.col, result.device_data);
+                            result.to(DEVICE_LOCAL);
                         }
                         else
                         {
@@ -1061,10 +1089,10 @@ namespace np
                     }
                     else
                     {
-                        units::mm_generate(this->matrix, other.matrix, result.matrix, this->row, other.row, this->col, other.row, 0, 0, 0, 0);
+                        units::mm_generate(this->matrix, other.matrix, result.matrix, this->row, other.row, this->col, other.col, 0, 0, 0, 0);
                     }
 #else
-                    units::mm_generate(this->matrix, other.matrix, result.matrix, this->row, other.row, this->col, other.row, 0, 0, 0, 0);
+                    units::mm_generate(this->matrix, other.matrix, result.matrix, this->row, other.row, this->col, other.col, 0, 0, 0, 0);
 #endif
                 }
                 return result;

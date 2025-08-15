@@ -29,158 +29,168 @@ namespace cuda_op
 
     // x + y
     template <typename T>
-    __device__ T add_opB(T x, T y)
+    __device__ T r_add_opB(T x, T y)
     {
         return x + y;
     }
+    template <typename T>
+    func_Bt<T> add_opB = r_add_opB;
 
     // x - y
     template <typename T>
-    __device__ T cut_opB(T x, T y)
+    __device__ T r_cut_opB(T x, T y)
     {
         return x - y;
     }
+    template <typename T>
+    __device__ func_Bt<T> cut_opB = r_cut_opB;
+
     // x * y
     template <typename T>
-    __device__ T mul_opB(T x, T y)
+    __device__ T r_mul_opB(T x, T y)
     {
         return x * y;
     }
+    template <typename T>
+    __device__ func_Bt<T> mul_opB = r_mul_opB;
+
     // x / y (y != 0)
     template <typename T>
-    __device__ T div_opB(T x, T y)
+    __device__ T r_div_opB(T x, T y)
     {
         return x / y;
     }
+    template <typename T>
+    __device__ func_Bt<T> div_opB = r_div_opB;
 
     // x = y + z
     template <typename T>
-    __device__ T add_opC(T x, T y, T z)
+    __device__ T r_add_opC(T x, T y, T z)
     {
         return y + z;
     }
+    template <typename T>
+    __device__ func_Ct<T> add_opC = r_add_opC;
+
     // x = y - z
     template <typename T>
-    __device__ T cut_opC(T x, T y, T z)
+    __device__ T r_cut_opC(T x, T y, T z)
     {
         return y - z;
     }
+    template <typename T>
+    __device__ func_Ct<T> cut_opC = r_cut_opC;
 
+    // __global__ function
     template <typename T>
-    __global__ static void kernel_cuda_opA(T **mat, size_t rows, size_t cols, size_t n, func_At<T> op)
+    __global__ void kernel_unary_op(T **mat, func_At<T> op)
     {
-        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-        if (idx < n)
-        {
-            size_t r = idx / cols;
-            size_t c = idx % cols;
-            T *row = mat[r];
-            row[c] = op(row[c]);
-        }
+        int row = blockIdx.y * blockDim.y + threadIdx.y;
+        int col = blockIdx.x * blockDim.x + threadIdx.x;
+        mat[row][col] = (*op)(mat[row][col]);
     }
     template <typename T>
-    __global__ static void kernel_cuda_memset(T **mat, T value, size_t rows, size_t cols, size_t n, func_Bt<T> op)
+    __global__ void kernel_nummul_op(T **mat, T value)
     {
-        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-        if (idx < n)
-        {
-            size_t r = idx / cols;
-            size_t c = idx % cols;
-            T *row = mat[r];
-            row[c] = op(row[c], value);
-        }
-    }
-    template <typename T>
-    __global__ static void kernel_cuda_opAB(T **a, T **b, size_t rows, size_t cols, size_t n, func_Bt<T> op)
-    {
-        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-        if (idx < n)
-        {
-            size_t r = idx / cols;
-            size_t c = idx % cols;
-            T *a_row = a[r];
-            T *b_row = b[r];
-            a_row[c] = op(a_row[c], b_row[c]);
-        }
+        int row = blockIdx.y * blockDim.y + threadIdx.y;
+        int col = blockIdx.x * blockDim.x + threadIdx.x;
+        mat[row][col] *= value;
     }
 
     template <typename T>
-    __global__ static void kernel_cuda_opABC(T **a, T **b, T **c, size_t rows, size_t cols, size_t n, func_Ct<T> op)
+    __global__ void kernel_binary_op(T **a, T **b, func_Bt<T> op)
     {
-        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-        if (idx < n)
-        {
-            size_t r = idx / cols;
-            size_t col = idx % cols;
-            T *a_row = a[r];
-            T *b_row = b[r];
-            T *c_row = c[r];
-            a_row[col] = op(a_row[col], b_row[col], c_row[col]);
-        }
+        int row = blockIdx.y * blockDim.y + threadIdx.y;
+        int col = blockIdx.x * blockDim.x + threadIdx.x;
+        a[row][col] = (*op)(a[row][col], b[row][col]);
     }
+
+    template <typename T>
+    __global__ void kernel_ternary_op(T **a, T **b, T **c, func_Ct<T> op)
+    {
+        int row = blockIdx.y * blockDim.y + threadIdx.y;
+        int col = blockIdx.x * blockDim.x + threadIdx.x;
+        a[row][col] = (*op)(a[row][col], b[row][col], c[row][col]);
+    }
+
+    // used in cpu
     template <typename T>
     void cuda_iterator(T **a, size_t rows_, size_t cols_, func_At<T> op)
     {
-        constexpr size_t block_size = 256;
-        size_t size_ = rows_ * cols_;
-        const size_t grid_size = (size_ + block_size - 1) / block_size;
+        dim3 block(rows_, cols_);
 
-        kernel_cuda_opA<T><<<grid_size, block_size>>>(a, rows_, cols_, size_, op);
+        func_At<T> d_op;
+        cudaMemcpyFromSymbol(&d_op, op, sizeof(func_At<T>));
+        
         cudaError_t err = cudaGetLastError();
         if (err != cudaSuccess)
         {
-            std::cerr << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+            std::cerr << __func__ << "()::" << "CUDA error: " << cudaGetErrorString(err) << std::endl;
         }
+        kernel_unary_op<T><<<block>>>(a, d_op);
         cudaDeviceSynchronize();
+        err = cudaGetLastError();
+        if (err != cudaSuccess)
+        {
+            std::cerr << __func__ << "()::__global__ function error " << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+        }
     }
 
     template <typename T>
-    void cuda_memset(T **a, T value, size_t rows_, size_t cols_, func_Bt<T> op)
+    void cuda_nummul(T **a, T value, size_t rows_, size_t cols_)
     {
-        constexpr size_t block_size = 256;
-        size_t size_ = rows_ * cols_;
-        const size_t grid_size = (size_ + block_size - 1) / block_size;
-
-        kernel_cuda_memset<T><<<grid_size, block_size>>>(a, value, rows_, cols_, size_, op);
+        dim3 block(rows_, cols_);
+        kernel_nummul_op<T><<<block>>>(a, value);
+        cudaDeviceSynchronize();
         cudaError_t err = cudaGetLastError();
         if (err != cudaSuccess)
         {
-            std::cerr << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+            std::cerr << __func__ << "()::" << "CUDA error: " << cudaGetErrorString(err) << std::endl;
         }
-        cudaDeviceSynchronize();
     }
 
     template <typename T>
     void cuda_iterator(T **a, T **b, size_t rows_, size_t cols_, func_Bt<T> op)
     {
+        dim3 block(rows_, cols_);
 
-        constexpr size_t block_size = 256;
-        size_t size_ = rows_ * cols_;
-        const size_t grid_size = (size_ + block_size - 1) / block_size;
+        func_Bt<T> d_op;
+        cudaMemcpyFromSymbol(&d_op, op, sizeof(func_Bt<T>));
 
-        kernel_cuda_opAB<T><<<grid_size, block_size>>>(a, b, rows_, cols_, size_, op);
         cudaError_t err = cudaGetLastError();
         if (err != cudaSuccess)
         {
-            std::cerr << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+            std::cerr << __func__ << "()::" << "CUDA error: " << cudaGetErrorString(err) << std::endl;
         }
+        kernel_binary_op<T><<<block>>>(a, b, d_op);
         cudaDeviceSynchronize();
+        err = cudaGetLastError();
+        if (err != cudaSuccess)
+        {
+            std::cerr << __func__ << "()::__global__ function error " << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+        }
     }
 
     template <typename T>
     void cuda_iterator(T **a, T **b, T **c, size_t rows_, size_t cols_, func_Ct<T> op)
     {
-        constexpr size_t block_size = 256;
-        size_t size_ = rows_ * cols_;
-        const size_t grid_size = (size_ + block_size - 1) / block_size;
+        dim3 block(rows_, cols_);
 
-        kernel_cuda_opABC<T><<<grid_size, block_size>>>(a, b, c, rows_, cols_, size_, op);
+        func_Ct<T> d_op;
+        cudaMemcpyFromSymbol(&d_op, op, sizeof(func_Ct<T>));
+
         cudaError_t err = cudaGetLastError();
         if (err != cudaSuccess)
         {
-            std::cerr << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+            std::cerr << __func__ << "()::" << "CUDA error: " << cudaGetErrorString(err) << std::endl;
         }
+        kernel_ternary_op<T><<<block>>>(a, b, c, d_op);
         cudaDeviceSynchronize();
+        err = cudaGetLastError();
+        if (err != cudaSuccess)
+        {
+            std::cerr << __func__ << "()::__global__ function error " << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+        }
     }
 
     template <typename T>
@@ -193,15 +203,12 @@ namespace cuda_op
 
         if (row < M && col < K)
         {
-            T sum = 0;
+            T sum = (T)0;
             for (size_t i = 0; i < N; ++i)
             {
-                T *A_row = A[row];
-                T *B_row = B[i];
-                sum += A_row[i] * B_row[col];
+                sum += A[row][i] * B[i][col];
             }
-            T *C_row = C[row];
-            C_row[col] = alpha * sum + beta * C_row[col];
+            C[row][col] = alpha * sum + beta * C[row][col];
         }
     }
     // 矩阵乘法 - 使用迭代器优化的CUDA实现
@@ -209,14 +216,15 @@ namespace cuda_op
     void gemm(T **A, size_t A_row, size_t A_col, T **B, size_t B_col, T **C,
               T alpha = 1.0, T beta = 0.0)
     {
-        constexpr size_t block_size = 16;
-        dim3 block(block_size, block_size);
-        dim3 grid((B_col + block_size - 1) / block_size,
-                  (A_row + block_size - 1) / block_size);
-
-        kernel_gemm<T><<<grid, block>>>(A, B, C, A_row, A_col, B_col,
-                                        alpha, beta);
+        dim3 block(A_row, B_col);
+        kernel_gemm<T><<<block>>>(A, B, C, A_row, A_col, B_col,
+                                  alpha, beta);
         cudaDeviceSynchronize();
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess)
+        {
+            std::cerr << __func__ << "()::" << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+        }
     }
 } // namespace cuda_iterator
 #endif
@@ -663,12 +671,14 @@ namespace np
     private:
         bool optimization = is_optimized;
         size_t maxprocs = MAX_thread;
-
+#if CUDA_CHECK
+        bool mem_stat = false;
+        bool mem_sync = false;
+#endif
     public:
         dataType **matrix;
         size_t row, col;
 #if CUDA_CHECK
-        bool mem_stat = false;
         bool MUL_GPU = true;
         dataType **device_data = nullptr;
 #endif
@@ -678,72 +688,77 @@ namespace np
         Numcpp(const dataType **mat, const size_t _row, const size_t _col);
 // operators
 #if CUDA_CHECK
-        // 修改后的 to 方法
         void to(const int device)
         {
             if (device == DEVICE_CUDA)
             {
                 if (device_data == nullptr)
                 {
-                    // 分配设备上的行指针数组
                     cudaMalloc((void **)&device_data, row * sizeof(dataType *));
-
-                    // 分配每行的设备内存
-                    dataType **host_row_ptrs = new dataType *[row];
-                    for (size_t i = 0; i < row; ++i)
+                    dataType **temp;
+                    cudaHostAlloc((void ***)&temp, row * sizeof(dataType *), cudaHostAllocDefault);
+                    for (int i = 0; i < row; i++)
                     {
-                        cudaMalloc((void **)&host_row_ptrs[i], col * sizeof(dataType));
-                        cudaMemcpy(host_row_ptrs[i], matrix[i], col * sizeof(dataType), cudaMemcpyHostToDevice);
+                        cudaMalloc((void **)&(temp[i]), col * sizeof(dataType));
+                        cudaMemcpy(temp[i], matrix[i], col * sizeof(dataType), cudaMemcpyHostToDevice);
                     }
-
-                    // 拷贝行指针数组到设备
-                    cudaMemcpy(device_data, host_row_ptrs, row * sizeof(dataType *), cudaMemcpyHostToDevice);
-                    delete[] host_row_ptrs;
+                    cudaMemcpy(device_data, temp, row * sizeof(dataType *), cudaMemcpyHostToDevice);
+                    cudaFreeHost(temp);
                 }
                 else
                 {
-                    dataType **host_row_ptrs = new dataType *[row];
-                    for (size_t i = 0; i < row; ++i)
+                    dataType **temp;
+                    cudaHostAlloc((void ***)&temp, row * sizeof(dataType *), cudaHostAllocDefault);
+                    for (int i = 0; i < row; i++)
                     {
-                        cudaMalloc((void **)&host_row_ptrs[i], col * sizeof(dataType));
-                        cudaMemcpy(host_row_ptrs[i], matrix[i], col * sizeof(dataType), cudaMemcpyHostToDevice);
+                        cudaMalloc((void **)&(temp[i]), col * sizeof(dataType));
+                        cudaMemcpy(temp[i], matrix[i], col * sizeof(dataType), cudaMemcpyHostToDevice);
                     }
-                    // 拷贝行指针数组到设备
-                    cudaMemcpy(device_data, host_row_ptrs, row * sizeof(dataType *), cudaMemcpyHostToDevice);
+                    cudaMemcpy(device_data, temp, row * sizeof(dataType *), cudaMemcpyHostToDevice);
+                    cudaFreeHost(temp);
+                }
+                cudaDeviceSynchronize();
+                cudaError_t err = cudaGetLastError();
+                if (err != cudaSuccess)
+                {
+                    std::cerr << __func__ << "()::" << "CUDA error: " << cudaGetErrorString(err) << std::endl;
                 }
                 mem_stat = true;
+                mem_sync = true;
             }
             else if (device == DEVICE_LOCAL)
             {
-                // 从设备复制数据回主机
-                dataType **host_row_ptrs = new dataType *[row];
-                cudaMemcpy(host_row_ptrs, device_data, row * sizeof(dataType *), cudaMemcpyDeviceToHost);
-                for (size_t i = 0; i < row; ++i)
+                dataType **temp;
+                cudaHostAlloc((void ***)&temp, row * sizeof(dataType *), cudaHostAllocDefault);
+                cudaMemcpy(temp, device_data, row * sizeof(dataType *), cudaMemcpyDeviceToHost);
+                for (size_t i = 0; i < row; i++)
                 {
-                    cudaMemcpy(matrix[i], host_row_ptrs[i], col * sizeof(dataType), cudaMemcpyDeviceToHost);
+                    cudaMemcpy(matrix[i], temp[i], col * sizeof(dataType), cudaMemcpyDeviceToHost);
                 }
-                delete[] host_row_ptrs;
+                cudaFreeHost(temp);
+                cudaDeviceSynchronize();
+                cudaError_t err = cudaGetLastError();
+                if (err != cudaSuccess)
+                {
+                    std::cerr << __func__ << "()::" << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+                }
+                mem_sync = false;
             }
-        };
+        }
         void cuda_free()
         {
-            if (device_data)
+            if (device_data != nullptr)
             {
-                // 首先获取行指针数组
-                dataType **host_row_ptrs = new dataType *[row];
-                cudaMemcpy(host_row_ptrs, device_data, row * sizeof(dataType *), cudaMemcpyDeviceToHost);
-
-                // 释放每行内存
-                for (size_t i = 0; i < row; ++i)
-                {
-                    cudaFree(host_row_ptrs[i]);
-                }
-
-                // 释放行指针数组
                 cudaFree(device_data);
+                cudaDeviceSynchronize();
+                cudaError_t err = cudaGetLastError();
+                if (err != cudaSuccess)
+                {
+                    std::cerr << __func__ << "()::" << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+                }
                 device_data = nullptr;
-                delete[] host_row_ptrs;
                 mem_stat = false;
+                mem_sync = false;
             }
         }
 #endif
@@ -796,7 +811,7 @@ namespace np
 #if CUDA_CHECK
                     if (this->mem_stat == true && other.mem_stat == true)
                     {
-                        cuda_op::cuda_iterator<dataType>(this->device_data, row, col, cuda_op::add_opB);
+                        cuda_op::cuda_iterator<dataType>(this->device_data, other.device_data, this->row, this->col, cuda_op::add_opB<dataType>);
                     }
                     else
                     {
@@ -834,7 +849,7 @@ namespace np
                     if (this->mem_stat == true && other.mem_stat == true)
                     {
                         result.to(DEVICE_CUDA);
-                        cuda_op::cuda_iterator<dataType>(result.device_data, this->device_data, other.device_data, row, col, cuda_op::add_opC);
+                        cuda_op::cuda_iterator<dataType>(result.device_data, this->device_data, other.device_data, this->row, this->col, cuda_op::add_opC<dataType>);
                         result.to(DEVICE_LOCAL);
                     }
                     else
@@ -873,7 +888,7 @@ namespace np
 #if CUDA_CHECK
                     if (this->mem_stat == true && other.mem_stat == true)
                     {
-                        cuda_op::cuda_iterator<dataType>(this->device_data, other.device_data, row, col, cuda_op::cut_opB);
+                        cuda_op::cuda_iterator<dataType>(this->device_data, other.device_data, this->row, this->col, cuda_op::cut_opB<dataType>);
                     }
                     else
                     {
@@ -911,7 +926,7 @@ namespace np
                     if (this->mem_stat == true && other.mem_stat == true)
                     {
                         result.to(DEVICE_CUDA);
-                        cuda_op::cuda_iterator<dataType>(result.device_data, this->device_data, other.device_data, row, col, cuda_op::cut_opC);
+                        cuda_op::cuda_iterator<dataType>(result.device_data, this->device_data, other.device_data, this->row, this->col, cuda_op::cut_opC<dataType>);
                         result.to(DEVICE_LOCAL);
                     }
                     else
@@ -947,7 +962,7 @@ namespace np
                 if (this->mem_stat == true)
                 {
                     result.to(DEVICE_CUDA);
-                    cuda_op::cuda_iterator<dataType>(result.device_data, this->device_data, row, col, cuda_op::mul_opB);
+                    cuda_op::cuda_iterator<dataType>(result.device_data, this->device_data, this->row, this->col, cuda_op::mul_opB<dataType>);
                     result.to(DEVICE_LOCAL);
                 }
                 else
@@ -979,7 +994,7 @@ namespace np
 #if CUDA_CHECK
                 if (this->mem_stat == true)
                 {
-                    cuda_op::cuda_memset<dataType>(this->device_data, n, row, col, cuda_op::mul_opB);
+                    cuda_op::cuda_nummul<dataType>(this->device_data, n, this->row, this->col);
                 }
                 else
                 {
@@ -1011,7 +1026,7 @@ namespace np
                 if (this->mem_stat == true)
                 {
                     result.to(DEVICE_CUDA);
-                    cuda_op::cuda_iterator<dataType>(result.device_data, this->device_data, row, col, cuda_op::div_opB);
+                    cuda_op::cuda_iterator<dataType>(result.device_data, this->device_data, this->row, this->col, cuda_op::div_opB<dataType>);
                     result.to(DEVICE_LOCAL);
                 }
                 else
@@ -1043,7 +1058,7 @@ namespace np
 #if CUDA_CHECK
                 if (this->mem_stat == true)
                 {
-                    cuda_op::cuda_memset<dataType>(this->device_data, n, row, col, cuda_op::div_opB);
+                    cuda_op::cuda_nummul<dataType>(this->device_data, n, this->row, this->col, cuda_op::div_opB<dataType>);
                 }
                 else
                 {

@@ -105,13 +105,13 @@ int main(int argc, char const *argv[])
 
 # **矩阵的运算**
 
-### 下面是支持的操纵符的类型：
+### 下面是支持的操纵符的类型
 
 ```c++
 Numcpp<typename> nc(4, 4),matrix(4,4);
 ```
 
-### 赋值运算符：
+### 赋值运算符
 
 ```c++
 //矩阵简单运算的赋值运算
@@ -162,7 +162,7 @@ nc.transposed();
 Numcpp<nc_t> Out = c<func> e; // 会创建一个新的矩阵
 ```
 
-### 函数数乘特殊乘法：
+### 函数数乘特殊乘法
 
 ```c++
 Numcpp<nc_t> act = result<sigmoid> NULL;
@@ -191,7 +191,7 @@ nc.maxprocs_set(thread_num);
 ```c++
 if (sqrt(thread_num) * sqrt(thread_num) > std::thread::hardware_concurrency() || thread_num < 1)
 {
-	throw std::invalid_argument("Invalid maxprocs");
+ throw std::invalid_argument("Invalid maxprocs");
 }
 ```
 
@@ -224,7 +224,7 @@ if (sqrt(thread_num) * sqrt(thread_num) > std::thread::hardware_concurrency() ||
 
 ```c++
 /*
-	The mathematical principles mentioned in the paper:
+ The mathematical principles mentioned in the paper:
      * this_matrix A_row * A_col
      * other_matrix A_col * B_col
      * result A_row * B_col
@@ -247,8 +247,6 @@ if (sqrt(thread_num) * sqrt(thread_num) > std::thread::hardware_concurrency() ||
 */
 ```
 
-
-
 # 对Nvidia GPU的CUDA加速支持
 
 提供所有基础操作的CUDA加速：
@@ -261,8 +259,9 @@ using namespace np;
 #define nc_t double
 int main()
 {
+    np::is_optimized = true;
     Numcpp<nc_t> n(16, 16);
-    Numcpp<nc_t> m(16, 8);
+    Numcpp<nc_t> m(16, 16);
     std::cout << n;
     std::cout << m;
     // 上传到GPU
@@ -279,8 +278,16 @@ int main()
     std::cout << n;
     std::cout << m;
 
+    // GPU加速的矩阵乘法（无优化算法）
     Numcpp<nc_t> result = n * m;
     std::cout << result;
+
+    // 同位加法
+    result = n + m;
+    std::cout << result;
+    // 本位加法
+    n += m;
+    std::cout << n;
     return 0;
 }
 ```
@@ -494,8 +501,6 @@ int main(int argc, char const *argv[])
 }
 
 ```
-
-
 
 # 相关信息
 

@@ -5,8 +5,9 @@ using namespace np;
 #define nc_t double
 int main()
 {
+    np::is_optimized = true;
     Numcpp<nc_t> n(16, 16);
-    Numcpp<nc_t> m(16, 8);
+    Numcpp<nc_t> m(16, 16);
     std::cout << n;
     std::cout << m;
     // 上传到GPU
@@ -23,7 +24,15 @@ int main()
     std::cout << n;
     std::cout << m;
 
+    // GPU加速的矩阵乘法（无优化算法）
     Numcpp<nc_t> result = n * m;
     std::cout << result;
+
+    // 同位加法
+    result = n + m;
+    std::cout << result;
+    // 本位加法
+    n += m;
+    std::cout << n;
     return 0;
 }

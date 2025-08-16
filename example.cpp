@@ -5,7 +5,7 @@
 
 using namespace np;
 
-// 复数
+// 复数，推荐使用C++的复数类型，支持FFT变换
 typedef std::complex<double> complex_double;
 
 // 理论上模板要被同一个类型实例化
@@ -18,9 +18,9 @@ void generate(Numcpp<nc_t> &nc)
     {
         for (size_t j = 0; j < nc.col; j++)
         {
-            double U1 = rand() * 1.0f / RAND_MAX;               // 0~1均匀分布
-            double U2 = rand() * 1.0f / RAND_MAX;               // 0~1均匀分布
-            double Z = sqrt(-2 * log(U1)) * cos(2 * M_PI * U2); // 标准正态分布
+            double U1 = rand() * 1.0f / RAND_MAX;                // 0~1均匀分布
+            double U2 = rand() * 1.0f / RAND_MAX;                // 0~1均匀分布
+            double Z = sqrt(-2 * log(U1)) * cos(2 * NP_PI * U2); // 标准正态分布
             // 期望为1，方差为3^2的正态分布
             nc[i][j] *= 1 + 3 * Z;
         }

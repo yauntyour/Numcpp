@@ -120,6 +120,12 @@ nc -= matrix;
 nc = matrix;
 //矩阵数乘广播的赋值运算
 nc *= number//number为一个数值
+nc += number
+nc -= number
+nc + number -> Numcpp
+nc - number -> Numcpp
+nc * number -> Numcpp
+//除法在最新版本已被移除
 ```
 
 ### 矩阵的基本运算
@@ -271,8 +277,10 @@ int main()
     // 在GPU上操作
     n *= 2.0; // 广播操作
     m *= 3.0;
+    n += 4;
+    m -= 6;
 
-    // 同步回CPU查看结果
+    // 同步回CPU查看结果（此操作会使内存同步状态更新为：mem_sync = false）
     n.to(DEVICE_LOCAL);
     m.to(DEVICE_LOCAL);
     std::cout << n;
@@ -283,11 +291,13 @@ int main()
     std::cout << result;
 
     // 同位加法
-    result = n + m;
+    result = n - m;
     std::cout << result;
+
     // 本位加法
     n += m;
     std::cout << n;
+
     return 0;
 }
 ```

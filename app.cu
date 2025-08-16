@@ -17,6 +17,8 @@ int main()
     // 在GPU上操作
     n *= 2.0; // 广播操作
     m *= 3.0;
+    n += 4;
+    m -= 6;
 
     // 同步回CPU查看结果
     n.to(DEVICE_LOCAL);
@@ -31,8 +33,12 @@ int main()
     // 同位加法
     result = n + m;
     std::cout << result;
-    // 本位加法
-    n += m;
+
+    // 本位减法
+    n -= m;
     std::cout << n;
+
+    // 同位广播
+    std::cout << n - 10;
     return 0;
 }

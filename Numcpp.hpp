@@ -34,7 +34,7 @@ namespace cuda_op
         return x + y;
     }
     template <typename T>
-    func_Bt<T> add_opB = r_add_opB;
+    __device__ func_Bt<T> add_opB = r_add_opB;
 
     // x - y
     template <typename T>
@@ -96,6 +96,20 @@ namespace cuda_op
         int col = blockIdx.x * blockDim.x + threadIdx.x;
         mat[row][col] *= value;
     }
+    template <typename T>
+    __global__ void kernel_numadd_op(T **mat, T value)
+    {
+        int row = blockIdx.y * blockDim.y + threadIdx.y;
+        int col = blockIdx.x * blockDim.x + threadIdx.x;
+        mat[row][col] += value;
+    }
+    template <typename T>
+    __global__ void kernel_numcut_op(T **mat, T value)
+    {
+        int row = blockIdx.y * blockDim.y + threadIdx.y;
+        int col = blockIdx.x * blockDim.x + threadIdx.x;
+        mat[row][col] -= value;
+    }
 
     template <typename T>
     __global__ void kernel_binary_op(T **a, T **b, func_Bt<T> op)
@@ -111,86 +125,6 @@ namespace cuda_op
         int row = blockIdx.y * blockDim.y + threadIdx.y;
         int col = blockIdx.x * blockDim.x + threadIdx.x;
         a[row][col] = (*op)(a[row][col], b[row][col], c[row][col]);
-    }
-
-    // used in cpu
-    template <typename T>
-    void cuda_iterator(T **a, size_t rows_, size_t cols_, func_At<T> op)
-    {
-        dim3 block(rows_, cols_);
-
-        func_At<T> d_op;
-        cudaMemcpyFromSymbol(&d_op, op, sizeof(func_At<T>));
-        
-        cudaError_t err = cudaGetLastError();
-        if (err != cudaSuccess)
-        {
-            std::cerr << __func__ << "()::" << "CUDA error: " << cudaGetErrorString(err) << std::endl;
-        }
-        kernel_unary_op<T><<<block>>>(a, d_op);
-        cudaDeviceSynchronize();
-        err = cudaGetLastError();
-        if (err != cudaSuccess)
-        {
-            std::cerr << __func__ << "()::__global__ function error " << "CUDA error: " << cudaGetErrorString(err) << std::endl;
-        }
-    }
-
-    template <typename T>
-    void cuda_nummul(T **a, T value, size_t rows_, size_t cols_)
-    {
-        dim3 block(rows_, cols_);
-        kernel_nummul_op<T><<<block>>>(a, value);
-        cudaDeviceSynchronize();
-        cudaError_t err = cudaGetLastError();
-        if (err != cudaSuccess)
-        {
-            std::cerr << __func__ << "()::" << "CUDA error: " << cudaGetErrorString(err) << std::endl;
-        }
-    }
-
-    template <typename T>
-    void cuda_iterator(T **a, T **b, size_t rows_, size_t cols_, func_Bt<T> op)
-    {
-        dim3 block(rows_, cols_);
-
-        func_Bt<T> d_op;
-        cudaMemcpyFromSymbol(&d_op, op, sizeof(func_Bt<T>));
-
-        cudaError_t err = cudaGetLastError();
-        if (err != cudaSuccess)
-        {
-            std::cerr << __func__ << "()::" << "CUDA error: " << cudaGetErrorString(err) << std::endl;
-        }
-        kernel_binary_op<T><<<block>>>(a, b, d_op);
-        cudaDeviceSynchronize();
-        err = cudaGetLastError();
-        if (err != cudaSuccess)
-        {
-            std::cerr << __func__ << "()::__global__ function error " << "CUDA error: " << cudaGetErrorString(err) << std::endl;
-        }
-    }
-
-    template <typename T>
-    void cuda_iterator(T **a, T **b, T **c, size_t rows_, size_t cols_, func_Ct<T> op)
-    {
-        dim3 block(rows_, cols_);
-
-        func_Ct<T> d_op;
-        cudaMemcpyFromSymbol(&d_op, op, sizeof(func_Ct<T>));
-
-        cudaError_t err = cudaGetLastError();
-        if (err != cudaSuccess)
-        {
-            std::cerr << __func__ << "()::" << "CUDA error: " << cudaGetErrorString(err) << std::endl;
-        }
-        kernel_ternary_op<T><<<block>>>(a, b, c, d_op);
-        cudaDeviceSynchronize();
-        err = cudaGetLastError();
-        if (err != cudaSuccess)
-        {
-            std::cerr << __func__ << "()::__global__ function error " << "CUDA error: " << cudaGetErrorString(err) << std::endl;
-        }
     }
 
     template <typename T>
@@ -685,7 +619,7 @@ namespace np
         Numcpp(const size_t _row, const size_t _col);
         Numcpp(const size_t _row, const size_t _col, dataType value);
         Numcpp(const Numcpp<dataType> &other);
-        Numcpp(const dataType **mat, const size_t _row, const size_t _col);
+        Numcpp(dataType **mat, const size_t _row, const size_t _col);
 // operators
 #if CUDA_CHECK
         void to(const int device)
@@ -811,7 +745,18 @@ namespace np
 #if CUDA_CHECK
                     if (this->mem_stat == true && other.mem_stat == true)
                     {
-                        cuda_op::cuda_iterator<dataType>(this->device_data, other.device_data, this->row, this->col, cuda_op::add_opB<dataType>);
+                        dim3 block(this->row, this->col);
+                        cuda_op::func_Bt<dataType> d_p;
+                        cudaMemcpyFromSymbol(&d_p, cuda_op::add_opB<dataType>, sizeof(cuda_op::func_Bt<dataType>));
+                        cuda_op::kernel_binary_op<dataType><<<block>>>(this->device_data, other.device_data, d_p);
+
+                        cudaError_t err = cudaGetLastError();
+                        if (err != cudaSuccess)
+                        {
+                            std::cerr << __func__ << "()::__global__ function error "
+                                      << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+                            throw std::runtime_error("CUDA runtime error");
+                        }
                     }
                     else
                     {
@@ -849,8 +794,20 @@ namespace np
                     if (this->mem_stat == true && other.mem_stat == true)
                     {
                         result.to(DEVICE_CUDA);
-                        cuda_op::cuda_iterator<dataType>(result.device_data, this->device_data, other.device_data, this->row, this->col, cuda_op::add_opC<dataType>);
+
+                        dim3 block(this->row, this->col);
+                        cuda_op::func_Ct<dataType> d_p;
+                        cudaMemcpyFromSymbol(&d_p, cuda_op::add_opC<dataType>, sizeof(cuda_op::func_Ct<dataType>));
+                        cuda_op::kernel_ternary_op<dataType><<<block>>>(result.device_data, this->device_data, other.device_data, d_p);
+
                         result.to(DEVICE_LOCAL);
+                        cudaError_t err = cudaGetLastError();
+                        if (err != cudaSuccess)
+                        {
+                            std::cerr << __func__ << "()::__global__ function error "
+                                      << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+                            throw std::runtime_error("CUDA runtime error");
+                        }
                     }
                     else
                     {
@@ -888,7 +845,18 @@ namespace np
 #if CUDA_CHECK
                     if (this->mem_stat == true && other.mem_stat == true)
                     {
-                        cuda_op::cuda_iterator<dataType>(this->device_data, other.device_data, this->row, this->col, cuda_op::cut_opB<dataType>);
+                        dim3 block(this->row, this->col);
+                        cuda_op::func_Bt<dataType> d_p;
+                        cudaMemcpyFromSymbol(&d_p, cuda_op::cut_opB<dataType>, sizeof(cuda_op::func_Bt<dataType>));
+                        cuda_op::kernel_binary_op<dataType><<<block>>>(this->device_data, other.device_data, d_p);
+
+                        cudaError_t err = cudaGetLastError();
+                        if (err != cudaSuccess)
+                        {
+                            std::cerr << __func__ << "()::__global__ function error "
+                                      << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+                            throw std::runtime_error("CUDA runtime error");
+                        }
                     }
                     else
                     {
@@ -926,8 +894,20 @@ namespace np
                     if (this->mem_stat == true && other.mem_stat == true)
                     {
                         result.to(DEVICE_CUDA);
-                        cuda_op::cuda_iterator<dataType>(result.device_data, this->device_data, other.device_data, this->row, this->col, cuda_op::cut_opC<dataType>);
+
+                        dim3 block(this->row, this->col);
+                        cuda_op::func_Ct<dataType> d_p;
+                        cudaMemcpyFromSymbol(&d_p, cuda_op::cut_opC<dataType>, sizeof(cuda_op::func_Ct<dataType>));
+                        cuda_op::kernel_ternary_op<dataType><<<block>>>(result.device_data, this->device_data, other.device_data, d_p);
+
                         result.to(DEVICE_LOCAL);
+                        cudaError_t err = cudaGetLastError();
+                        if (err != cudaSuccess)
+                        {
+                            std::cerr << __func__ << "()::__global__ function error "
+                                      << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+                            throw std::runtime_error("CUDA runtime error");
+                        }
                     }
                     else
                     {
@@ -943,6 +923,177 @@ namespace np
                 return result;
             }
         }
+        Numcpp<dataType> operator+(dataType n)
+        {
+            Numcpp<dataType> result(this->row, this->col, n);
+            if (this->optimization == false)
+            {
+                for (size_t i = 0; i < this->row; i++)
+                {
+                    for (size_t j = 0; j < this->col; j++)
+                    {
+                        result.matrix[i][j] += this->matrix[i][j];
+                    }
+                }
+            }
+            else
+            {
+#if CUDA_CHECK
+                if (this->mem_stat == true)
+                {
+                    result.to(DEVICE_CUDA);
+
+                    dim3 block(this->row, this->col);
+                    cuda_op::func_Bt<dataType> d_p;
+                    cudaMemcpyFromSymbol(&d_p, cuda_op::add_opB<dataType>, sizeof(cuda_op::func_Bt<dataType>));
+                    cuda_op::kernel_binary_op<dataType><<<block>>>(result.device_data, this->device_data, d_p);
+
+                    result.to(DEVICE_LOCAL);
+                    cudaError_t err = cudaGetLastError();
+                    if (err != cudaSuccess)
+                    {
+                        std::cerr << __func__ << "()::__global__ function error "
+                                  << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+                        throw std::runtime_error("CUDA runtime error");
+                    }
+                }
+                else
+                {
+                    units::thread_worker<dataType>(result.matrix, this->row, this->col, this->matrix, this->maxprocs, [n](dataType **a, dataType **b, size_t i, size_t j)
+                                                   { a[i][j] += b[i][j]; });
+                }
+#else
+                units::thread_worker<dataType>(result.matrix, this->row, this->col, this->matrix, this->maxprocs, [n](dataType **a, dataType **b, size_t i, size_t j)
+                                               { a[i][j] += b[i][j]; });
+#endif
+            }
+            return result;
+        }
+        void operator+=(dataType n)
+        {
+            if (this->optimization == false)
+            {
+                for (size_t i = 0; i < this->row; i++)
+                {
+                    for (size_t j = 0; j < this->col; j++)
+                    {
+                        this->matrix[i][j] += n;
+                    }
+                }
+            }
+            else
+            {
+#if CUDA_CHECK
+                if (this->mem_stat == true)
+                {
+                    dim3 block(this->row, this->col);
+                    cuda_op::kernel_numadd_op<dataType><<<block>>>(this->device_data, n);
+
+                    cudaError_t err = cudaGetLastError();
+                    if (err != cudaSuccess)
+                    {
+                        std::cerr << __func__ << "()::__global__ function error "
+                                  << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+                        throw std::runtime_error("CUDA runtime error");
+                    }
+                }
+                else
+                {
+                    units::thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
+                                                   { a[i][j] += n; });
+                }
+#else
+                units::thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
+                                               { a[i][j] += n; });
+#endif
+            }
+        }
+        Numcpp<dataType> operator-(dataType n)
+        {
+            Numcpp<dataType> result(this->matrix, this->row, this->col);
+            if (this->optimization == false)
+            {
+                for (size_t i = 0; i < this->row; i++)
+                {
+                    for (size_t j = 0; j < this->col; j++)
+                    {
+                        result.matrix[i][j] -= n;
+                    }
+                }
+            }
+            else
+            {
+#if CUDA_CHECK
+                if (this->mem_stat == true)
+                {
+                    result.to(DEVICE_CUDA);
+
+                    dim3 block(this->row, this->col);
+                    cuda_op::func_Bt<dataType> d_p;
+                    cudaMemcpyFromSymbol(&d_p, cuda_op::mul_opB<dataType>, sizeof(cuda_op::func_Bt<dataType>));
+                    cuda_op::kernel_numcut_op<dataType><<<block>>>(result.device_data, n);
+
+                    result.to(DEVICE_LOCAL);
+                    cudaError_t err = cudaGetLastError();
+                    if (err != cudaSuccess)
+                    {
+                        std::cerr << __func__ << "()::__global__ function error "
+                                  << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+                        throw std::runtime_error("CUDA runtime error");
+                    }
+                }
+                else
+                {
+                    units::thread_worker<dataType>(result.matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
+                                                   { a[i][j] -= n; });
+                }
+#else
+                units::thread_worker<dataType>(result.matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
+                                               { a[i][j] -= n; });
+#endif
+            }
+            return result;
+        }
+        void operator-=(dataType n)
+        {
+            if (this->optimization == false)
+            {
+                for (size_t i = 0; i < this->row; i++)
+                {
+                    for (size_t j = 0; j < this->col; j++)
+                    {
+                        this->matrix[i][j] -= n;
+                    }
+                }
+            }
+            else
+            {
+#if CUDA_CHECK
+                if (this->mem_stat == true)
+                {
+                    dim3 block(this->row, this->col);
+                    cuda_op::kernel_numcut_op<dataType><<<block>>>(this->device_data, n);
+
+                    cudaError_t err = cudaGetLastError();
+                    if (err != cudaSuccess)
+                    {
+                        std::cerr << __func__ << "()::__global__ function error "
+                                  << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+                        throw std::runtime_error("CUDA runtime error");
+                    }
+                }
+                else
+                {
+                    units::thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
+                                                   { a[i][j] -= n; });
+                }
+#else
+                units::thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
+                                               { a[i][j] -= n; });
+#endif
+            }
+        }
+
         Numcpp<dataType> operator*(dataType n)
         {
             Numcpp<dataType> result(this->row, this->col, n);
@@ -962,8 +1113,20 @@ namespace np
                 if (this->mem_stat == true)
                 {
                     result.to(DEVICE_CUDA);
-                    cuda_op::cuda_iterator<dataType>(result.device_data, this->device_data, this->row, this->col, cuda_op::mul_opB<dataType>);
+
+                    dim3 block(this->row, this->col);
+                    cuda_op::func_Bt<dataType> d_p;
+                    cudaMemcpyFromSymbol(&d_p, cuda_op::mul_opB<dataType>, sizeof(cuda_op::func_Bt<dataType>));
+                    cuda_op::kernel_binary_op<dataType><<<block>>>(result.device_data, this->device_data, d_p);
+
                     result.to(DEVICE_LOCAL);
+                    cudaError_t err = cudaGetLastError();
+                    if (err != cudaSuccess)
+                    {
+                        std::cerr << __func__ << "()::__global__ function error "
+                                  << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+                        throw std::runtime_error("CUDA runtime error");
+                    }
                 }
                 else
                 {
@@ -994,7 +1157,16 @@ namespace np
 #if CUDA_CHECK
                 if (this->mem_stat == true)
                 {
-                    cuda_op::cuda_nummul<dataType>(this->device_data, n, this->row, this->col);
+                    dim3 block(this->row, this->col);
+                    cuda_op::kernel_nummul_op<dataType><<<block>>>(this->device_data, n);
+
+                    cudaError_t err = cudaGetLastError();
+                    if (err != cudaSuccess)
+                    {
+                        std::cerr << __func__ << "()::__global__ function error "
+                                  << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+                        throw std::runtime_error("CUDA runtime error");
+                    }
                 }
                 else
                 {
@@ -1004,70 +1176,6 @@ namespace np
 #else
                 units::thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
                                                { a[i][j] *= n; });
-#endif
-            }
-        }
-        Numcpp<dataType> operator/(dataType n)
-        {
-            Numcpp<dataType> result(this->row, this->col);
-            if (this->optimization == false)
-            {
-                for (size_t i = 0; i < this->row; i++)
-                {
-                    for (size_t j = 0; j < this->col; j++)
-                    {
-                        result.matrix[i][j] = this->matrix[i][j] * n;
-                    }
-                }
-            }
-            else
-            {
-#if CUDA_CHECK
-                if (this->mem_stat == true)
-                {
-                    result.to(DEVICE_CUDA);
-                    cuda_op::cuda_iterator<dataType>(result.device_data, this->device_data, this->row, this->col, cuda_op::div_opB<dataType>);
-                    result.to(DEVICE_LOCAL);
-                }
-                else
-                {
-                    units::thread_worker<dataType>(result.matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
-                                                   { a[i][j] /= n; });
-                }
-#else
-                units::thread_worker<dataType>(result.matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
-                                               { a[i][j] /= n; });
-#endif
-            }
-            return result;
-        }
-        void operator/=(dataType n)
-        {
-            if (this->optimization == false)
-            {
-                for (size_t i = 0; i < this->row; i++)
-                {
-                    for (size_t j = 0; j < this->col; j++)
-                    {
-                        this->matrix[i][j] /= n;
-                    }
-                }
-            }
-            else
-            {
-#if CUDA_CHECK
-                if (this->mem_stat == true)
-                {
-                    cuda_op::cuda_nummul<dataType>(this->device_data, n, this->row, this->col, cuda_op::div_opB<dataType>);
-                }
-                else
-                {
-                    units::thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
-                                                   { a[i][j] /= n; });
-                }
-#else
-                units::thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
-                                               { a[i][j] /= n; });
 #endif
             }
         }
@@ -1341,7 +1449,7 @@ namespace np
         }
     }
     template <typename T>
-    inline Numcpp<T>::Numcpp(const T **mat, const size_t _row, const size_t _col)
+    inline Numcpp<T>::Numcpp(T **mat, const size_t _row, const size_t _col)
     {
         if (_row == 0 || _col == 0)
         {
@@ -1498,8 +1606,30 @@ namespace np
             }
             else
             {
+#if CUDA_CHECK
+                if (this->mem_stat == true && other.mem_stat == true)
+                {
+                    dim3 block(this->row, this->col);
+                    cuda_op::func_Bt<T> d_p = new cuda_op::func_Bt<T>;
+                    cudaMemcpyFromSymbol(&d_p, cuda_op::mul_opB<T>, sizeof(cuda_op::func_Bt<T>));
+                    cuda_op::kernel_binary_op<T><<<block>>>(this->device_data, other.device_data, d_p);
+
+                    cudaError_t err = cudaGetLastError();
+                    if (err != cudaSuccess)
+                    {
+                        std::cerr << __func__ << "()::__global__ function error "
+                                  << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+                        throw std::runtime_error("CUDA runtime error");
+                    }
+                }
+                else
+                {
+                    throw std::invalid_argument("Invalid Matrix Device: Both parties involved in the operation should be on the same device.");
+                }
+#else
                 units::thread_worker<T>(this->matrix, this->row, this->col, other.matrix, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
                                         { a[i][j] *= b[i][j]; });
+#endif
             }
         }
     }

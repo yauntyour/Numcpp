@@ -264,7 +264,7 @@ if (sqrt(thread_num) * sqrt(thread_num) > std::thread::hardware_concurrency() ||
 
 # 对Nvidia GPU的CUDA加速支持
 
-提供所有基础操作的CUDA加速：
+提供所有基础操作的CUDA加速，同时基于性能考量，内存自动同步默认为关，在**完成所有运算后**应**手动同步数据**回主机。
 
 ```c++
 #include <iostream>
@@ -288,8 +288,10 @@ int main()
     m *= 3.0;
     n += 4;
     m -= 6;
+    n /= 8;
+    m /= 12;
 
-    // 同步回CPU查看结果（此操作会使内存同步状态更新为：mem_sync = false）
+    // 同步回CPU查看结果
     n.to(DEVICE_LOCAL);
     m.to(DEVICE_LOCAL);
     std::cout << n;
@@ -297,16 +299,22 @@ int main()
 
     // GPU加速的矩阵乘法（无优化算法）
     Numcpp<nc_t> result = n * m;
+    result.to(DEVICE_LOCAL);
     std::cout << result;
 
     // 同位加法
-    result = n - m;
+    result = n + m;
+    result.to(DEVICE_LOCAL);
     std::cout << result;
 
-    // 本位加法
-    n += m;
+    // 本位减法
+    n -= m;
+    n.to(DEVICE_LOCAL);
     std::cout << n;
 
+    // 同位广播 & 开启自动同步(默认关闭状态，避免运算期间反复拷贝内存)
+    n.auto_sync = true;
+    std::cout << (n - 10) / 8.0 * 5 + 3 - 2 * 4 / 2 + 1 << std::endl;
     return 0;
 }
 ```
@@ -528,3 +536,4 @@ int main(int argc, char const *argv[])
 授权协议：MIT开源协议
 
 参考：[数学基础 - 矩阵的基本运算（Matrix Operations）_沙沙的兔子的博客-CSDN博客_矩阵运算](https://blog.csdn.net/darkrabbit/article/details/80025935)
+

@@ -9,9 +9,13 @@ ffttest-2.cpp
 fft.ipynb
 .gitignore
 test.exe
-test.cpp
+cpum.cpp
 MLP.exe
 app
 app.exe
 app.exp
 app.lib
+mat
+load.exe
+.gitignore
+load_test.cpp

@@ -7,6 +7,7 @@
 #include <functional>
 #include <type_traits>
 #include <complex>
+#include <fstream>
 #define NP_PI 3.14159265358979
 
 #define CUDA_CHECK __has_include(<cuda.h>)
@@ -95,6 +96,13 @@ namespace cuda_op
         int row = blockIdx.y * blockDim.y + threadIdx.y;
         int col = blockIdx.x * blockDim.x + threadIdx.x;
         mat[row][col] *= value;
+    }
+    template <typename T>
+    __global__ void kernel_numdiv_op(T **mat, T value)
+    {
+        int row = blockIdx.y * blockDim.y + threadIdx.y;
+        int col = blockIdx.x * blockDim.x + threadIdx.x;
+        mat[row][col] /= value;
     }
     template <typename T>
     __global__ void kernel_numadd_op(T **mat, T value)
@@ -607,24 +615,26 @@ namespace np
         size_t maxprocs = MAX_thread;
 #if CUDA_CHECK
         bool mem_stat = false;
-        bool mem_sync = false;
+        bool mem_synced = false;
 #endif
     public:
         dataType **matrix;
         size_t row, col;
 #if CUDA_CHECK
         bool MUL_GPU = true;
+        bool auto_sync = false;
         dataType **device_data = nullptr;
 #endif
         Numcpp(const size_t _row, const size_t _col);
         Numcpp(const size_t _row, const size_t _col, dataType value);
         Numcpp(const Numcpp<dataType> &other);
         Numcpp(dataType **mat, const size_t _row, const size_t _col);
+        Numcpp(char *filename);
 // operators
 #if CUDA_CHECK
         void to(const int device)
         {
-            if (device == DEVICE_CUDA)
+            if (device == DEVICE_CUDA && mem_stat == false)
             {
                 if (device_data == nullptr)
                 {
@@ -658,9 +668,9 @@ namespace np
                     std::cerr << __func__ << "()::" << "CUDA error: " << cudaGetErrorString(err) << std::endl;
                 }
                 mem_stat = true;
-                mem_sync = true;
+                mem_synced = true;
             }
-            else if (device == DEVICE_LOCAL)
+            else if (device == DEVICE_LOCAL && mem_stat == true)
             {
                 dataType **temp;
                 cudaHostAlloc((void ***)&temp, row * sizeof(dataType *), cudaHostAllocDefault);
@@ -676,7 +686,7 @@ namespace np
                 {
                     std::cerr << __func__ << "()::" << "CUDA error: " << cudaGetErrorString(err) << std::endl;
                 }
-                mem_sync = false;
+                mem_synced = false;
             }
         }
         void cuda_free()
@@ -692,7 +702,7 @@ namespace np
                 }
                 device_data = nullptr;
                 mem_stat = false;
-                mem_sync = false;
+                mem_synced = false;
             }
         }
 #endif
@@ -800,7 +810,11 @@ namespace np
                         cudaMemcpyFromSymbol(&d_p, cuda_op::add_opC<dataType>, sizeof(cuda_op::func_Ct<dataType>));
                         cuda_op::kernel_ternary_op<dataType><<<block>>>(result.device_data, this->device_data, other.device_data, d_p);
 
-                        result.to(DEVICE_LOCAL);
+                        if (result.auto_sync == true)
+                        {
+                            result.to(DEVICE_LOCAL);
+                        }
+
                         cudaError_t err = cudaGetLastError();
                         if (err != cudaSuccess)
                         {
@@ -900,7 +914,10 @@ namespace np
                         cudaMemcpyFromSymbol(&d_p, cuda_op::cut_opC<dataType>, sizeof(cuda_op::func_Ct<dataType>));
                         cuda_op::kernel_ternary_op<dataType><<<block>>>(result.device_data, this->device_data, other.device_data, d_p);
 
-                        result.to(DEVICE_LOCAL);
+                        if (result.auto_sync == true)
+                        {
+                            result.to(DEVICE_LOCAL);
+                        }
                         cudaError_t err = cudaGetLastError();
                         if (err != cudaSuccess)
                         {
@@ -948,7 +965,10 @@ namespace np
                     cudaMemcpyFromSymbol(&d_p, cuda_op::add_opB<dataType>, sizeof(cuda_op::func_Bt<dataType>));
                     cuda_op::kernel_binary_op<dataType><<<block>>>(result.device_data, this->device_data, d_p);
 
-                    result.to(DEVICE_LOCAL);
+                    if (result.auto_sync == true)
+                    {
+                        result.to(DEVICE_LOCAL);
+                    }
                     cudaError_t err = cudaGetLastError();
                     if (err != cudaSuccess)
                     {
@@ -1033,7 +1053,10 @@ namespace np
                     cudaMemcpyFromSymbol(&d_p, cuda_op::mul_opB<dataType>, sizeof(cuda_op::func_Bt<dataType>));
                     cuda_op::kernel_numcut_op<dataType><<<block>>>(result.device_data, n);
 
-                    result.to(DEVICE_LOCAL);
+                    if (result.auto_sync == true)
+                    {
+                        result.to(DEVICE_LOCAL);
+                    }
                     cudaError_t err = cudaGetLastError();
                     if (err != cudaSuccess)
                     {
@@ -1119,7 +1142,10 @@ namespace np
                     cudaMemcpyFromSymbol(&d_p, cuda_op::mul_opB<dataType>, sizeof(cuda_op::func_Bt<dataType>));
                     cuda_op::kernel_binary_op<dataType><<<block>>>(result.device_data, this->device_data, d_p);
 
-                    result.to(DEVICE_LOCAL);
+                    if (result.auto_sync == true)
+                    {
+                        result.to(DEVICE_LOCAL);
+                    }
                     cudaError_t err = cudaGetLastError();
                     if (err != cudaSuccess)
                     {
@@ -1179,6 +1205,96 @@ namespace np
 #endif
             }
         }
+        Numcpp<dataType> operator/(dataType n)
+        {
+            assert(n != 0);
+            Numcpp<dataType> result(this->row, this->col);
+            if (this->optimization == false)
+            {
+                for (size_t i = 0; i < this->row; i++)
+                {
+                    for (size_t j = 0; j < this->col; j++)
+                    {
+                        result.matrix[i][j] = this->matrix[i][j] / n;
+                    }
+                }
+            }
+            else
+            {
+#if CUDA_CHECK
+                if (this->mem_stat == true)
+                {
+                    result.to(DEVICE_CUDA);
+
+                    dim3 block(this->row, this->col);
+                    cuda_op::func_Bt<dataType> d_p;
+                    cudaMemcpyFromSymbol(&d_p, cuda_op::div_opB<dataType>, sizeof(cuda_op::func_Bt<dataType>));
+                    cuda_op::kernel_binary_op<dataType><<<block>>>(result.device_data, this->device_data, d_p);
+
+                    if (result.auto_sync == true)
+                    {
+                        result.to(DEVICE_LOCAL);
+                    }
+                    cudaError_t err = cudaGetLastError();
+                    if (err != cudaSuccess)
+                    {
+                        std::cerr << __func__ << "()::__global__ function error "
+                                  << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+                        throw std::runtime_error("CUDA runtime error");
+                    }
+                }
+                else
+                {
+                    units::thread_worker<dataType>(result.matrix, this->row, this->col, this->matrix, this->maxprocs, [n](dataType **a, dataType **b, size_t i, size_t j)
+                                                   { a[i][j] = b[i][j] / n; });
+                }
+#else
+                units::thread_worker<dataType>(result.matrix, this->row, this->col, this->matrix, this->maxprocs, [n](dataType **a, dataType **b, size_t i, size_t j)
+                                               { a[i][j] = b[i][j] / n; });
+#endif
+            }
+            return result;
+        }
+        void operator/=(dataType n)
+        {
+            assert(n != 0);
+            if (this->optimization == false)
+            {
+                for (size_t i = 0; i < this->row; i++)
+                {
+                    for (size_t j = 0; j < this->col; j++)
+                    {
+                        this->matrix[i][j] /= n;
+                    }
+                }
+            }
+            else
+            {
+#if CUDA_CHECK
+                if (this->mem_stat == true)
+                {
+                    dim3 block(this->row, this->col);
+                    cuda_op::kernel_numdiv_op<dataType><<<block>>>(this->device_data, n);
+
+                    cudaError_t err = cudaGetLastError();
+                    if (err != cudaSuccess)
+                    {
+                        std::cerr << __func__ << "()::__global__ function error "
+                                  << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+                        throw std::runtime_error("CUDA runtime error");
+                    }
+                }
+                else
+                {
+                    units::thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
+                                                   { a[i][j] /= n; });
+                }
+#else
+                units::thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [n](dataType **a, size_t i, size_t j)
+                                               { a[i][j] /= n; });
+#endif
+            }
+        }
         /*Matrix function complex*/
         /*the col of first matrix is the same as the row of second matrix*/
         Numcpp<dataType> operator*(const Numcpp<dataType> &other)
@@ -1203,7 +1319,10 @@ namespace np
                         {
                             result.to(DEVICE_CUDA);
                             cuda_op::gemm<dataType>(this->device_data, this->row, this->col, other.device_data, other.col, result.device_data);
-                            result.to(DEVICE_LOCAL);
+                            if (result.auto_sync == true)
+                            {
+                                result.to(DEVICE_LOCAL);
+                            }
                         }
                         else
                         {
@@ -1310,7 +1429,24 @@ namespace np
             }
         }
 #endif
-
+        void save(char *path)
+        {
+            FILE *fp = fopen(path, "ab");
+            if (fp == NULL)
+            {
+                throw std::invalid_argument("Invalid path");
+            }
+#if CUDA_CHECK
+            to(DEVICE_LOCAL);
+#endif
+            fwrite(&row, sizeof(size_t), 1, fp);
+            fwrite(&col, sizeof(size_t), 1, fp);
+            for (size_t i = 0; i < row; i++)
+            {
+                fwrite(matrix[i], sizeof(dataType), col, fp);
+            }
+            fclose(fp);
+        }
         template <typename T>
         friend std::ostream &operator<<(std::ostream &stream, const Numcpp<T> &m)
         {
@@ -1509,6 +1645,25 @@ namespace np
         }
     }
     template <typename T>
+    Numcpp<T>::Numcpp(char *path)
+    {
+        FILE *fp = fopen(path, "rb");
+        if (fp == NULL)
+        {
+            throw std::invalid_argument("Invalid path");
+        }
+        fread(&row, sizeof(size_t), 1, fp);
+        fread(&col, sizeof(size_t), 1, fp);
+        matrix = new T *[row];
+        for (size_t i = 0; i < row; i++)
+        {
+            matrix[i] = new T[col];
+            fread(matrix[i], sizeof(T), col, fp);
+        }
+        fclose(fp);
+    }
+
+    template <typename T>
     Numcpp<T>::~Numcpp()
     {
 #if CUDA_CHECK
@@ -1647,5 +1802,23 @@ namespace np
             return result;
         }
     }
-
+    template <typename T>
+    static Numcpp<T> load(const char *path)
+    {
+        FILE *fp = fopen(path, "rb");
+        if (fp == NULL)
+        {
+            throw std::invalid_argument("Invalid path");
+        }
+        size_t row, col;
+        fread(&row, sizeof(size_t), 1, fp);
+        fread(&col, sizeof(size_t), 1, fp);
+        Numcpp<T> result(row, col);
+        for (size_t i = 0; i < row; i++)
+        {
+            fread(result.matrix[i], sizeof(T), col, fp);
+        }
+        fclose(fp);
+        return result;
+    }
 } // namespace np

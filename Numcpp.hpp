@@ -1480,7 +1480,7 @@ namespace np
         };
     };
     template <typename T>
-    oper_object<T> operator<(const Numcpp<T> &A, T (*function_object)(T A, T B))
+    oper_object<T> operator<(const Numcpp<T> &A, auto function_object)
     {
         oper_object<T> oper(A, function_object);
         return oper;

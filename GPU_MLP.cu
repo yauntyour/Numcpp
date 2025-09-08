@@ -2,6 +2,7 @@
 #include "Numcpp.hpp"
 #include <math.h>
 #include <vector>
+
 using namespace np;
 
 #define nc_t double

@@ -1465,13 +1465,13 @@ namespace np
     };
     // matrix special operate
     template <typename T>
-    class oper_object
+    class smul_object
     {
     public:
         size_t row, col;
         T **matrix;
         T (*function_object)(T A, T B);
-        oper_object(const Numcpp<T> &A, T (*function_object)(T A, T B))
+        smul_object(const Numcpp<T> &A, T (*function_object)(T A, T B))
         {
             this->row = A.row;
             this->col = A.col;
@@ -1480,13 +1480,13 @@ namespace np
         };
     };
     template <typename T>
-    oper_object<T> operator<(const Numcpp<T> &A, auto function_object)
+    smul_object<T> operator<(const Numcpp<T> &A, auto function_object)
     {
-        oper_object<T> oper(A, function_object);
+        smul_object<T> oper(A, function_object);
         return oper;
     }
     template <typename T>
-    Numcpp<T> operator>(const oper_object<T> &oper, const Numcpp<T> &B)
+    Numcpp<T> operator>(const smul_object<T> &oper, const Numcpp<T> &B)
     {
         // A.col = B.row
         if (oper.col != B.row)
@@ -1510,7 +1510,7 @@ namespace np
         }
     }
     template <typename T>
-    Numcpp<T> operator>(const oper_object<T> &oper, void *data)
+    Numcpp<T> operator>(const smul_object<T> &oper, void *data)
     {
         Numcpp<T> result(oper.row, oper.col);
         for (size_t i = 0; i < oper.row; i++)
@@ -1522,7 +1522,6 @@ namespace np
         }
         return result;
     }
-
     // defined in class functions
     template <typename T>
     Numcpp<T>::Numcpp(const size_t _row, const size_t _col)

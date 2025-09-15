@@ -1862,7 +1862,7 @@ namespace np
             for (size_t i = k + 1; i < row; i++)
             {
                 T val = std::abs(temp[i][k]);
-                if (val > max_val)
+                if (std::abs(val) > std::abs(max_val))
                 {
                     max_val = val;
                     max_row = i;
@@ -1972,7 +1972,7 @@ namespace np
                 for (size_t j = k; j < col; j++)
                 {
                     T val = std::abs(aug[i][j]);
-                    if (val > max_val)
+                    if (std::abs(val) > std::abs(max_val))
                     {
                         max_val = val;
                         max_row = i;
@@ -2058,7 +2058,7 @@ namespace np
         if (this->optimization)
         {
             units::thread_worker<T>(aug, row, col, result.matrix, this->maxprocs,
-                                    [col_swap](T **a, T **b, size_t i, size_t j)
+                                    [&](T **a, T **b, size_t i, size_t j)
                                     {
                                         b[i][col_swap[j]] = a[i][j + col];
                                     });

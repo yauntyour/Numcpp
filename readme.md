@@ -6,15 +6,27 @@
 #include <iostream>
 #include <math.h>
 #include <complex>
-#include "Numcpp.hpp"
+#include "qcnn.hpp"
 
 using namespace np;
+using namespace name_qcnn;
 
 // 复数，推荐使用C++的复数类型，支持FFT变换
 typedef std::complex<double> complex_double;
 
 // 理论上模板要被同一个类型实例化
 #define nc_t complex_double
+
+nc_t sinxy(nc_t x, nc_t y)
+{
+    return nc_t(sin(x.real()) * sin(y.real()), (sin(x.imag()) * sin(y.imag())));
+}
+// 定义更新权重的函数
+// void updata(std::vector<np::Numcpp<double>> &results, np::Numcpp<double> &loss, size_t offset)
+backward_func_make(nc_t, updata)
+{
+    std::cout << "Updata[" << offset << "]:" << loss << results[offset];
+}
 
 void generate(Numcpp<nc_t> &nc)
 {
@@ -102,6 +114,43 @@ int main(int argc, char const *argv[])
         // 读取矩阵
         Numcpp<nc_t> temp = load<nc_t>("mat");
         std::cout << "temp load in Out:" << temp << "\n";
+
+        // 创建一个方阵
+        Numcpp<nc_t> mat(3, 3);
+        generate(mat);
+        std::cout << "mat:" << mat << "\n";
+        std::cout << "Determinant value:" << mat.determinant() << "\n";
+        std::cout << "Inverse mat:" << mat.inverse() << "\n";
+
+        // lambda支持
+        std::cout << "<lambda>:" << (temp<[](nc_t x, nc_t y) -> nc_t
+                                          { return nc_t(sin(x.real()) * sin(y.real()), (sin(x.imag()) * sin(y.imag()))); }>
+                                         NULL)
+                  << std::endl;
+        std::cout << "<func>:" << (n<sinxy> NULL)
+                  << std::endl;
+
+        Numcpp<nc_t> input(3, 3, 1);
+        Numcpp<nc_t> val(3, 9, 0);
+        Numcpp<nc_t> w_1(3, 9, 1);
+        Numcpp<nc_t> b_1(3, 9, 1);
+        std::vector<qcnn_layer<nc_t>> list = {
+            {w_1, [](Numcpp<nc_t> &A, Numcpp<nc_t> &B) -> Numcpp<nc_t>
+             {
+                 return A * B;
+             },
+             NULL},
+            // 使用快捷宏创建lambda表达式
+            {b_1, (active_lambda_make(nc_t) {
+                 return A + B;
+             }),
+             updata}};
+        qcnn<nc_t> qc(list);
+        std::cout << "arithmetic result: " << qc.arithmetic(input) << std::endl;
+        auto loss = qc.loss(val);
+        qc.updata(loss);
+        auto s_loss = qc.loss_squ(val);
+        std::cout << "s_loss: " << s_loss;
     }
     catch (const std::exception &e)
     {
@@ -131,10 +180,11 @@ nc = matrix;
 nc *= number//number为一个数值
 nc += number
 nc -= number
+nc /= number
 nc + number -> Numcpp
 nc - number -> Numcpp
 nc * number -> Numcpp
-//除法在最新版本已被移除
+nc / number -> Numcpp
 ```
 
 ### 矩阵的基本运算
@@ -169,6 +219,22 @@ nc.Hadamard_self(matrix);
 Numcpp<typename> result = nc.transpose();
 //转置矩阵
 nc.transposed();
+```
+
+## 矩阵的逆（方阵）
+
+```c++
+// 创建一个方阵
+Numcpp<nc_t> mat(3, 3);
+//非奇异化
+generate(mat);
+mat.inverse() -> Numcpp
+```
+
+## 矩阵的行列式计算（方阵）
+
+```c++
+mat.determinant() -> Number
 ```
 
 ### 矩阵的特殊乘法
@@ -536,4 +602,3 @@ int main(int argc, char const *argv[])
 授权协议：MIT开源协议
 
 参考：[数学基础 - 矩阵的基本运算（Matrix Operations）_沙沙的兔子的博客-CSDN博客_矩阵运算](https://blog.csdn.net/darkrabbit/article/details/80025935)
-

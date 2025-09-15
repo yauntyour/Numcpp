@@ -110,6 +110,13 @@ int main(int argc, char const *argv[])
         Numcpp<nc_t> temp = load<nc_t>("mat");
         std::cout << "temp load in Out:" << temp << "\n";
 
+        // 创建一个方阵
+        Numcpp<nc_t> mat(3, 3);
+        generate(mat);
+        std::cout << "mat:" << mat << "\n";
+        std::cout << "Determinant value:" << mat.determinant() << "\n";
+        std::cout << "Inverse mat:" << mat.inverse() << "\n";
+
         // lambda支持
         std::cout << "<lambda>:" << (temp<[](nc_t x, nc_t y) -> nc_t
                                           { return nc_t(sin(x.real()) * sin(y.real()), (sin(x.imag()) * sin(y.imag()))); }>

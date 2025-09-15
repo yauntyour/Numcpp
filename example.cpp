@@ -1,6 +1,7 @@
 #include <iostream>
 #include <math.h>
 #include <complex>
+#include "Numcpp.hpp"
 #include "qcnn.hpp"
 
 using namespace np;

@@ -1,3 +1,5 @@
+#ifndef __NUMCPP__H__
+#define __NUMCPP__H__
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
@@ -2131,3 +2133,5 @@ namespace np
         }
     }
 } // namespace np
+
+#endif //!__NUMCPP__H__

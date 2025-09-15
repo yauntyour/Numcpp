@@ -1,6 +1,6 @@
+#include "Numcpp.hpp"
 #ifndef __QCNN__H__
 #define __QCNN__H__
-#include "Numcpp.hpp"
 #include <vector>
 #include <algorithm>
 #include <functional>

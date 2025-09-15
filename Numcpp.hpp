@@ -1464,6 +1464,7 @@ namespace np
         }
         dataType determinant() const;
         Numcpp<dataType> inverse() const;
+        Numcpp<dataType> pseudoinverse() const; // 伪逆计算
     };
     // matrix special operate
     template <typename T>
@@ -1919,7 +1920,7 @@ namespace np
     {
         if (row != col)
         {
-            throw std::invalid_argument("Matrix must be square to compute inverse.");
+            throw std::invalid_argument("Standard inverse is only defined for square matrices. Use pseudoinverse() for non-square matrices.");
         }
 
         // 创建增广矩阵 [A | I]
@@ -2076,5 +2077,57 @@ namespace np
 
         units::mat_delete(aug, row);
         return result;
+    }
+    template <typename T>
+    Numcpp<T> Numcpp<T>::pseudoinverse() const
+    {
+        // 计算伪逆: A⁺ = (AᵀA)⁻¹Aᵀ (对于满列秩矩阵)
+        // 或者使用SVD分解，但这里使用更简单的方法
+
+        // 计算转置
+        Numcpp<T> A_T = this->transpose();
+
+        // 计算 AᵀA
+        Numcpp<T> ATA = A_T * (*this);
+
+        try
+        {
+            // 尝试计算逆
+            Numcpp<T> ATA_inv = ATA.inverse();
+
+            // 计算伪逆: (AᵀA)⁻¹Aᵀ
+            return ATA_inv * A_T;
+        }
+        catch (const std::runtime_error &e)
+        {
+            // 如果矩阵是奇异的，使用正则化方法
+            // 添加一个小的正则化参数
+            T lambda = static_cast<T>(1e-10);
+            Numcpp<T> regularized = ATA;
+
+            // 添加λI到对角线
+            if (this->optimization)
+            {
+                units::thread_worker<T>(regularized.matrix, regularized.row, regularized.col, this->maxprocs,
+                                        [lambda](T **a, size_t i, size_t j)
+                                        {
+                                            if (i == j)
+                                                a[i][j] += lambda;
+                                        });
+            }
+            else
+            {
+                for (size_t i = 0; i < regularized.row; i++)
+                {
+                    regularized.matrix[i][i] += lambda;
+                }
+            }
+
+            // 计算逆
+            Numcpp<T> regularized_inv = regularized.inverse();
+
+            // 计算伪逆: (AᵀA + λI)⁻¹Aᵀ
+            return regularized_inv * A_T;
+        }
     }
 } // namespace np

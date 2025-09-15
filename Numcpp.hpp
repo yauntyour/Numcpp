@@ -1462,6 +1462,8 @@ namespace np
             stream << "]\n";
             return stream;
         }
+        dataType determinant() const;
+        Numcpp<dataType> inverse() const;
     };
     // matrix special operate
     template <typename T>
@@ -1818,6 +1820,261 @@ namespace np
             fread(result.matrix[i], sizeof(T), col, fp);
         }
         fclose(fp);
+        return result;
+    }
+    template <typename T>
+    T Numcpp<T>::determinant() const
+    {
+        if (row != col)
+        {
+            throw std::invalid_argument("Matrix must be square to compute determinant.");
+        }
+
+        // 复制矩阵数据以避免修改原矩阵
+        T **temp = units::mat_create<T>(row, col);
+
+        if (this->optimization == false)
+        {
+            for (size_t i = 0; i < row; i++)
+            {
+                for (size_t j = 0; j < col; j++)
+                {
+                    temp[i][j] = matrix[i][j];
+                }
+            }
+        }
+        else
+        {
+            units::Copy_thread_worker<T>(temp, row, col, matrix, this->maxprocs,
+                                         [](T **a, T **b, size_t i, size_t j)
+                                         { a[i][j] = b[i][j]; });
+        }
+
+        T det = static_cast<T>(1);
+        int sign = 1;
+
+        // LU分解 with partial pivoting
+        for (size_t k = 0; k < row; k++)
+        {
+            // 寻找主元
+            size_t max_row = k;
+            T max_val = std::abs(temp[k][k]);
+            for (size_t i = k + 1; i < row; i++)
+            {
+                T val = std::abs(temp[i][k]);
+                if (val > max_val)
+                {
+                    max_val = val;
+                    max_row = i;
+                }
+            }
+
+            // 如果主元为0，则行列式为0
+            if (max_val == static_cast<T>(0))
+            {
+                units::mat_delete(temp, row);
+                return static_cast<T>(0);
+            }
+
+            // 交换行
+            if (max_row != k)
+            {
+                std::swap(temp[k], temp[max_row]);
+                sign *= -1; // 行交换改变符号
+            }
+
+            det *= temp[k][k];
+
+            // 消元 - 使用多线程优化
+            if (this->optimization && (row - k - 1) > 100)
+            {
+                units::thread_worker<T>(temp, row - k - 1, col - k, this->maxprocs,
+                                        [k, temp](T **a, size_t i, size_t j)
+                                        {
+                                            size_t row_idx = k + 1 + i;
+                                            size_t col_idx = k + j;
+                                            T factor = a[row_idx][k] / a[k][k];
+                                            a[row_idx][col_idx] -= factor * a[k][col_idx];
+                                        });
+            }
+            else
+            {
+                for (size_t i = k + 1; i < row; i++)
+                {
+                    T factor = temp[i][k] / temp[k][k];
+                    for (size_t j = k + 1; j < col; j++)
+                    {
+                        temp[i][j] -= factor * temp[k][j];
+                    }
+                }
+            }
+        }
+
+        units::mat_delete(temp, row);
+        return det * static_cast<T>(sign);
+    }
+
+    template <typename T>
+    Numcpp<T> Numcpp<T>::inverse() const
+    {
+        if (row != col)
+        {
+            throw std::invalid_argument("Matrix must be square to compute inverse.");
+        }
+
+        // 创建增广矩阵 [A | I]
+        T **aug = units::mat_create<T>(row, 2 * col);
+
+        // 初始化增广矩阵
+        if (this->optimization)
+        {
+            // 使用多线程初始化增广矩阵
+            units::thread_worker<T>(aug, row, 2 * col, this->maxprocs,
+                                    [this](T **a, size_t i, size_t j)
+                                    {
+                                        if (j < col)
+                                        {
+                                            a[i][j] = matrix[i][j];
+                                        }
+                                        else
+                                        {
+                                            a[i][j] = (j == i + col) ? static_cast<T>(1) : static_cast<T>(0);
+                                        }
+                                    });
+        }
+        else
+        {
+            for (size_t i = 0; i < row; i++)
+            {
+                for (size_t j = 0; j < col; j++)
+                {
+                    aug[i][j] = matrix[i][j];
+                }
+                for (size_t j = col; j < 2 * col; j++)
+                {
+                    aug[i][j] = (j == i + col) ? static_cast<T>(1) : static_cast<T>(0);
+                }
+            }
+        }
+
+        // 全选主元高斯-约旦消元
+        std::vector<size_t> col_swap(col); // 记录列交换
+        for (size_t i = 0; i < col; i++)
+            col_swap[i] = i;
+
+        for (size_t k = 0; k < row; k++)
+        {
+            // 寻找主元
+            size_t max_row = k, max_col = k;
+            T max_val = std::abs(aug[k][k]);
+            for (size_t i = k; i < row; i++)
+            {
+                for (size_t j = k; j < col; j++)
+                {
+                    T val = std::abs(aug[i][j]);
+                    if (val > max_val)
+                    {
+                        max_val = val;
+                        max_row = i;
+                        max_col = j;
+                    }
+                }
+            }
+
+            if (max_val == static_cast<T>(0))
+            {
+                units::mat_delete(aug, row);
+                throw std::runtime_error("Matrix is singular and cannot be inverted.");
+            }
+
+            // 交换行
+            if (max_row != k)
+            {
+                std::swap(aug[k], aug[max_row]);
+            }
+
+            // 交换列
+            if (max_col != k)
+            {
+                for (size_t i = 0; i < row; i++)
+                {
+                    std::swap(aug[i][k], aug[i][max_col]);
+                }
+                std::swap(col_swap[k], col_swap[max_col]);
+            }
+
+            // 归一化主元行
+            T pivot = aug[k][k];
+
+            if (this->optimization)
+            {
+                // 使用多线程归一化
+                units::thread_worker<T>(aug, 1, 2 * col - k, this->maxprocs,
+                                        [k, pivot](T **a, size_t i, size_t j)
+                                        {
+                                            a[k][k + j] /= pivot;
+                                        });
+            }
+            else
+            {
+                for (size_t j = k; j < 2 * col; j++)
+                {
+                    aug[k][j] /= pivot;
+                }
+            }
+
+            // 消元 - 使用多线程优化
+            if (this->optimization && row > 100)
+            {
+                units::thread_worker<T>(aug, row, 2 * col, this->maxprocs,
+                                        [k](T **a, size_t i, size_t j)
+                                        {
+                                            if (i != k)
+                                            {
+                                                T factor = a[i][k];
+                                                a[i][j] -= factor * a[k][j];
+                                            }
+                                        });
+            }
+            else
+            {
+                for (size_t i = 0; i < row; i++)
+                {
+                    if (i == k)
+                        continue;
+                    T factor = aug[i][k];
+                    for (size_t j = k; j < 2 * col; j++)
+                    {
+                        aug[i][j] -= factor * aug[k][j];
+                    }
+                }
+            }
+        }
+
+        // 提取逆矩阵
+        Numcpp<T> result(row, col);
+
+        // 根据列交换调整逆矩阵
+        if (this->optimization)
+        {
+            units::thread_worker<T>(aug, row, col, result.matrix, this->maxprocs,
+                                    [col_swap](T **a, T **b, size_t i, size_t j)
+                                    {
+                                        b[i][col_swap[j]] = a[i][j + col];
+                                    });
+        }
+        else
+        {
+            for (size_t i = 0; i < row; i++)
+            {
+                for (size_t j = 0; j < col; j++)
+                {
+                    result.matrix[i][col_swap[j]] = aug[i][j + col];
+                }
+            }
+        }
+
+        units::mat_delete(aug, row);
         return result;
     }
 } // namespace np

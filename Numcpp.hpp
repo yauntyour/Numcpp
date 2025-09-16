@@ -12,6 +12,13 @@
 #include <fstream>
 #define NP_PI 3.14159265358979
 
+#define MATtoPtr2D(T, value_name, change_name, row, col) \
+    T *change_name[col];                                 \
+    for (size_t i = 0; i < row; i++)                     \
+    {                                                    \
+        change_name[i] = mat[i];                         \
+    }
+
 #define CUDA_CHECK __has_include(<cuda.h>)
 
 // cuda code
@@ -631,6 +638,7 @@ namespace np
         Numcpp(const size_t _row, const size_t _col, dataType value);
         Numcpp(const Numcpp<dataType> &other);
         Numcpp(dataType **mat, const size_t _row, const size_t _col);
+        Numcpp(dataType (*mat)[], const size_t _row, const size_t _col);
         Numcpp(char *filename);
 // operators
 #if CUDA_CHECK
@@ -2131,6 +2139,14 @@ namespace np
             // 计算伪逆: (AᵀA + λI)⁻¹Aᵀ
             return regularized_inv * A_T;
         }
+    }
+#define MATtoNumcpp(mat_name, Numcpp, row, col) \
+    for (size_t i = 0; i < row; i++)               \
+    {                                              \
+        for (size_t j = 0; j < col; j++)           \
+        {                                          \
+            Numcpp[i][j] = mat_name[i][j];         \
+        }                                          \
     }
 } // namespace np
 

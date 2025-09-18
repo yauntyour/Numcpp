@@ -634,11 +634,11 @@ namespace np
         bool auto_sync = false;
         dataType **device_data = nullptr;
 #endif
+        Numcpp() = default;
         Numcpp(const size_t _row, const size_t _col);
         Numcpp(const size_t _row, const size_t _col, dataType value);
         Numcpp(const Numcpp<dataType> &other);
         Numcpp(dataType **mat, const size_t _row, const size_t _col);
-        Numcpp(dataType (*mat)[], const size_t _row, const size_t _col);
         Numcpp(char *filename);
 // operators
 #if CUDA_CHECK
@@ -2141,12 +2141,12 @@ namespace np
         }
     }
 #define MATtoNumcpp(mat_name, Numcpp, row, col) \
-    for (size_t i = 0; i < row; i++)               \
-    {                                              \
-        for (size_t j = 0; j < col; j++)           \
-        {                                          \
-            Numcpp[i][j] = mat_name[i][j];         \
-        }                                          \
+    for (size_t i = 0; i < row; i++)            \
+    {                                           \
+        for (size_t j = 0; j < col; j++)        \
+        {                                       \
+            Numcpp[i][j] = mat_name[i][j];      \
+        }                                       \
     }
 } // namespace np
 

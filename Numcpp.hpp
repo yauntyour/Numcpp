@@ -1448,7 +1448,7 @@ namespace np
             return result;
         }
 
-        // 原地FFT
+        // 自体FFT
         void ffted(int inv)
         {
             static_assert(
@@ -1530,12 +1530,15 @@ namespace np
                 }
                 return *this;
             }
+            operator Numcpp() const
+            {
+                return *(this->mat_);
+            }
 
         private:
             Numcpp *mat_;
             size_t current_index_;
         };
-
         CommaInitializer operator<<(dataType value)
         {
             if (row * col == 0)

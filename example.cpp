@@ -119,9 +119,9 @@ int main(int argc, char const *argv[])
         std::cout << "mat Determinant value:" << mat.determinant() << "\n";
         std::cout << "mat Inverse mat:" << mat.inverse() << "\n";
 
+        // 直接赋值式流
+        Numcpp<int> nmat = (Numcpp<int>(4, 3) << 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);
         // 矩阵阵的逆
-        Numcpp<int> nmat(4, 3);
-        nmat << 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12;
         std::cout << "nmat:" << nmat << "\n";
         std::cout << "nmat Inverse mat:" << nmat.pseudoinverse() << "\n";
 

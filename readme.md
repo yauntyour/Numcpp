@@ -221,17 +221,23 @@ Numcpp<typename> result = nc.transpose();
 nc.transposed();
 ```
 
-## 矩阵的逆（方阵）
+## 方阵的逆以及矩形矩阵的伪逆
 
 ```c++
-// 创建一个方阵
+// 流式创建一个方阵
 Numcpp<nc_t> mat(3, 3);
-//非奇异化
-generate(mat);
+mat << 1, 2, 3, 4, 5, 6, 7, 8, 9;
+
+// 方阵的逆
 mat.inverse() -> Numcpp
+
+// 矩阵的逆
+Numcpp<nc_t> nmat(4, 3);
+nmat << 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12;
+nmat.pseudoinverse() -> Numcpp
 ```
 
-## 矩阵的行列式计算（方阵）
+## 方阵的行列式计算
 
 ```c++
 mat.determinant() -> Number

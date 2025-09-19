@@ -1358,7 +1358,7 @@ namespace np
         /*transposed this matrix*/
         void transposed();
         /*the transposition of this matrix*/
-        Numcpp transpose();
+        Numcpp transpose() const;
         void Hadamard_self(const Numcpp<dataType> &);
         Numcpp Hadamard(const Numcpp<dataType> &);
 
@@ -1481,7 +1481,7 @@ namespace np
         public:
             CommaInitializer(Numcpp *mat, size_t current_index) : mat_(mat), current_index_(current_index) {}
 
-            CommaInitializer &operator,(T value)
+            CommaInitializer &operator,(dataType value)
             {
                 size_t row = current_index_ / mat_->col;
                 size_t col = current_index_ % mat_->col;
@@ -1502,7 +1502,7 @@ namespace np
             size_t current_index_;
         };
 
-        CommaInitializer operator<<(T value)
+        CommaInitializer operator<<(dataType value)
         {
             if (row * col == 0)
                 throw std::out_of_range("Matrix is empty");
@@ -1728,7 +1728,7 @@ namespace np
 #endif
     }
     template <typename T>
-    Numcpp<T> Numcpp<T>::transpose()
+    Numcpp<T> Numcpp<T>::transpose() const
     {
         Numcpp<T> result(this->col, this->row);
         if (this->optimization == false)

@@ -111,12 +111,20 @@ int main(int argc, char const *argv[])
         Numcpp<nc_t> temp = load<nc_t>("mat");
         std::cout << "temp load in Out:" << temp << "\n";
 
-        // 创建一个方阵
+        // 流式创建一个方阵
         Numcpp<nc_t> mat(3, 3);
-        generate(mat);
+        mat << 1, 2, 3, 4, 5, 6, 7, 8, 9;
+
+        // 方阵的逆、行列式
         std::cout << "mat:" << mat << "\n";
-        std::cout << "Determinant value:" << mat.determinant() << "\n";
-        std::cout << "Inverse mat:" << mat.inverse() << "\n";
+        std::cout << "mat Determinant value:" << mat.determinant() << "\n";
+        std::cout << "mat Inverse mat:" << mat.inverse() << "\n";
+
+        // 矩阵阵的逆
+        Numcpp<nc_t> nmat(4, 3);
+        nmat << 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12;
+        std::cout << "nmat:" << nmat << "\n";
+        std::cout << "nmat Inverse mat:" << nmat.pseudoinverse() << "\n";
 
         // lambda支持
         std::cout << "<lambda>:" << (temp<[](nc_t x, nc_t y) -> nc_t

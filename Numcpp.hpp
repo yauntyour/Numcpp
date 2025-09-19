@@ -627,8 +627,8 @@ namespace np
         bool mem_synced = false;
 #endif
     public:
-        dataType **matrix;
-        size_t row, col;
+        dataType **matrix = nullptr;
+        size_t row = 0, col = 0;
 #if CUDA_CHECK
         bool MUL_GPU = true;
         bool auto_sync = false;
@@ -721,7 +721,42 @@ namespace np
         {
             if (other.row != this->row || other.col != this->col)
             {
-                throw std::invalid_argument("Invalid Matrix");
+                if (matrix == nullptr)
+                {
+#if CUDA_CHECK
+                    cuda_free();
+                    for (size_t i = 0; i < this->row; i++)
+                    {
+                        delete matrix[i];
+                    }
+                    delete[] matrix;
+#else
+                    for (size_t i = 0; i < this->row; i++)
+                    {
+                        delete matrix[i];
+                    }
+                    delete[] matrix;
+#endif
+                }
+                row = other.row;
+                col = other.col;
+                matrix = new dataType *[row];
+                if (this->optimization == false)
+                {
+                    for (size_t i = 0; i < row; i++)
+                    {
+                        matrix[i] = new dataType[col];
+                        for (size_t j = 0; j < col; j++)
+                        {
+                            matrix[i][j] = other.matrix[i][j];
+                        }
+                    }
+                }
+                else
+                {
+                    units::Copy_thread_worker<dataType>(matrix, this->row, this->col, other.matrix, this->maxprocs, [](dataType **a, dataType **b, size_t i, size_t j)
+                                                        { a[i][j] = b[i][j]; });
+                }
             }
             else
             {
@@ -1457,8 +1492,7 @@ namespace np
             }
             fclose(fp);
         }
-        template <typename T>
-        friend std::ostream &operator<<(std::ostream &stream, const Numcpp<T> &m)
+        friend std::ostream &operator<<(std::ostream &stream, const Numcpp<dataType> &m)
         {
             stream << '(' << m.row << ',' << m.col << ')' << "[\n";
             for (size_t i = 0; i < m.row; ++i)
@@ -1466,7 +1500,7 @@ namespace np
                 stream << "    [" << i << "][";
                 for (size_t j = 0; j < m.col; ++j)
                 {
-                    stream << (T)(m.matrix[i][j]) << (j == m.col - 1 ? "]\n" : " , ");
+                    stream << (dataType)(m.matrix[i][j]) << (j == m.col - 1 ? "]\n" : " , ");
                 }
             }
             stream << "]\n";

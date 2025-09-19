@@ -10,7 +10,6 @@ using namespace name_qcnn;
 // 复数，推荐使用C++的复数类型，支持FFT变换
 typedef std::complex<double> complex_double;
 
-// 理论上模板要被同一个类型实例化
 #define nc_t complex_double
 
 nc_t sinxy(nc_t x, nc_t y)
@@ -121,10 +120,17 @@ int main(int argc, char const *argv[])
         std::cout << "mat Inverse mat:" << mat.inverse() << "\n";
 
         // 矩阵阵的逆
-        Numcpp<nc_t> nmat(4, 3);
+        Numcpp<int> nmat(4, 3);
         nmat << 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12;
         std::cout << "nmat:" << nmat << "\n";
         std::cout << "nmat Inverse mat:" << nmat.pseudoinverse() << "\n";
+
+        Numcpp<int> U, S, Vt;
+        nmat.svd(U, S, Vt);
+
+        std::cout << "SVD_U:" << U << "\n";
+        std::cout << "SVD_S:" << S << "\n";
+        std::cout << "SVD_Vt:" << Vt << "\n";
 
         // lambda支持
         std::cout << "<lambda>:" << (temp<[](nc_t x, nc_t y) -> nc_t

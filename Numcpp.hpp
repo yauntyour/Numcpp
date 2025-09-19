@@ -2311,6 +2311,131 @@ namespace np
             }
         }
     }
+#if CUDA_CHECK
+    template <typename T>
+    void cuda_svd(const Numcpp<T> &A, Numcpp<T> &U, Numcpp<T> &S, Numcpp<T> &Vt)
+    {
+        // 分配GPU内存
+        T *d_A;
+        T *d_U;
+        T *d_S;
+        T *d_Vt;
+
+        cudaMalloc((void **)&d_A, A.row * A.col * sizeof(T));
+        cudaMalloc((void **)&d_U, A.row * A.row * sizeof(T));
+        cudaMalloc((void **)&d_S, A.col * sizeof(T));
+        cudaMalloc((void **)&d_Vt, A.col * A.col * sizeof(T));
+
+        // 将数据从2D数组复制到1D数组
+        T *h_A = new T[A.row * A.col];
+        for (int i = 0; i < A.row; i++)
+        {
+            for (int j = 0; j < A.col; j++)
+            {
+                h_A[i * A.col + j] = A.matrix[i][j];
+            }
+        }
+
+        // 复制到GPU
+        cudaMemcpy(d_A, h_A, A.row * A.col * sizeof(T), cudaMemcpyHostToDevice);
+
+        // 创建cuSOLVER句柄
+        cusolverDnHandle_t handle;
+        cusolverDnCreate(&handle);
+
+        // 计算工作空间大小
+        int lwork;
+        if (std::is_same<T, float>::value)
+        {
+            cusolverDnSgesvd_bufferSize(handle, A.row, A.col, &lwork);
+        }
+        else if (std::is_same<T, double>::value)
+        {
+            cusolverDnDgesvd_bufferSize(handle, A.row, A.col, &lwork);
+        }
+
+        // 分配工作空间
+        T *d_work;
+        cudaMalloc((void **)&d_work, lwork * sizeof(T));
+
+        // 执行SVD
+        int *devInfo;
+        cudaMalloc((void **)&devInfo, sizeof(int));
+
+        if (std::is_same<T, float>::value)
+        {
+            cusolverDnSgesvd(handle, 'A', 'A', A.row, A.col,
+                             (float *)d_A, A.row, (float *)d_S,
+                             (float *)d_U, A.row, (float *)d_Vt, A.col,
+                             (float *)d_work, lwork, NULL, devInfo);
+        }
+        else if (std::is_same<T, double>::value)
+        {
+            cusolverDnDgesvd(handle, 'A', 'A', A.row, A.col,
+                             (double *)d_A, A.row, (double *)d_S,
+                             (double *)d_U, A.row, (double *)d_Vt, A.col,
+                             (double *)d_work, lwork, NULL, devInfo);
+        }
+
+        // 检查执行状态
+        int info;
+        cudaMemcpy(&info, devInfo, sizeof(int), cudaMemcpyDeviceToHost);
+        if (info != 0)
+        {
+            std::cerr << "SVD failed with error code: " << info << std::endl;
+        }
+
+        // 将结果复制回主机
+        T *h_U = new T[A.row * A.row];
+        T *h_S = new T[A.col];
+        T *h_Vt = new T[A.col * A.col];
+
+        cudaMemcpy(h_U, d_U, A.row * A.row * sizeof(T), cudaMemcpyDeviceToHost);
+        cudaMemcpy(h_S, d_S, A.col * sizeof(T), cudaMemcpyDeviceToHost);
+        cudaMemcpy(h_Vt, d_Vt, A.col * A.col * sizeof(T), cudaMemcpyDeviceToHost);
+
+        // 转换为Numcpp格式
+        U = Numcpp<T>(A.row, A.row);
+        S = Numcpp<T>(A.col, A.col);
+        Vt = Numcpp<T>(A.col, A.col);
+
+        for (int i = 0; i < A.row; i++)
+        {
+            for (int j = 0; j < A.row; j++)
+            {
+                U.matrix[i][j] = h_U[i * A.row + j];
+            }
+        }
+
+        for (int i = 0; i < A.col; i++)
+        {
+            S.matrix[i][i] = h_S[i];
+        }
+
+        for (int i = 0; i < A.col; i++)
+        {
+            for (int j = 0; j < A.col; j++)
+            {
+                Vt.matrix[i][j] = h_Vt[i * A.col + j];
+            }
+        }
+
+        // 清理资源
+        delete[] h_A;
+        delete[] h_U;
+        delete[] h_S;
+        delete[] h_Vt;
+
+        cudaFree(d_A);
+        cudaFree(d_U);
+        cudaFree(d_S);
+        cudaFree(d_Vt);
+        cudaFree(d_work);
+        cudaFree(devInfo);
+
+        cusolverDnDestroy(handle);
+    }
+#endif
 #define MATtoNumcpp(mat_name, Numcpp, row, col) \
     for (size_t i = 0; i < row; i++)            \
     {                                           \

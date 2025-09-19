@@ -46,5 +46,13 @@ int main()
     // 同位广播 & 开启自动同步
     n.auto_sync = true;
     std::cout << (n - 10) / 8.0 * 5 + 3 - 2 * 4 / 2 + 1 << std::endl;
+
+    Numcpp<double> mat = (Numcpp<double>(4, 3) << 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);
+    Numcpp<double> U, S, Vt;
+    np::cuda_svd(mat, U, S, Vt);
+    std::cout << "SVD_U:" << U << "\n";
+    std::cout << "SVD_S:" << S << "\n";
+    std::cout << "SVD_Vt:" << Vt << "\n";
+    std::cout << "rebuild mat:" << U * S * Vt << "\n";
     return 0;
 }

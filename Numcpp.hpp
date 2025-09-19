@@ -10,6 +10,7 @@
 #include <type_traits>
 #include <complex>
 #include <fstream>
+#include <vector>
 #define NP_PI 3.14159265358979
 
 #define MATtoPtr2D(T, value_name, change_name, row, col) \
@@ -25,7 +26,7 @@
 #if CUDA_CHECK
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
-#include <cuComplex.h>
+#include <cusolverDn.h>
 #define DEVICE_CUDA 1
 #define DEVICE_LOCAL 0
 namespace cuda_op
@@ -1474,7 +1475,7 @@ namespace np
             }
         }
 #endif
-        void save(char *path)
+        void save(const char *path)
         {
             FILE *fp = fopen(path, "ab");
             if (fp == NULL)
@@ -1566,7 +1567,13 @@ namespace np
         };
     };
     template <typename T>
+#if CUDA_CHECK
+    smul_object<T> operator<(const Numcpp<T> &A, T (*function_object)(T A, T B))
+#elif __cplusplus < 202000L
+    smul_object<T> operator<(const Numcpp<T> &A, T (*function_object)(T A, T B))
+#else
     smul_object<T> operator<(const Numcpp<T> &A, auto function_object)
+#endif // CUDA_CHECK
     {
         smul_object<T> oper(A, function_object);
         return oper;
@@ -2220,257 +2227,15 @@ namespace np
         {
             throw std::invalid_argument("SVD requires matrix with row >= col");
         }
-
-        // 使用双边雅可比方法实现 SVD
-        // 这是一个简化实现，实际应用中可能需要更复杂的算法
-
-        // 初始化 U 为单位矩阵
-        U = Numcpp<T>(row, row);
-        for (size_t i = 0; i < row; i++)
-        {
-            U.matrix[i][i] = static_cast<T>(1);
-        }
-
-        // 初始化 V 为单位矩阵
-        Vt = Numcpp<T>(col, col);
-        for (size_t i = 0; i < col; i++)
-        {
-            Vt.matrix[i][i] = static_cast<T>(1);
-        }
-
-        // 复制当前矩阵
-        Numcpp<T> A = *this;
-
-        // 设置收敛阈值和最大迭代次数
-        const T epsilon = static_cast<T>(1e-10);
-        const int max_iterations = 100;
-
-        // 双边雅可比迭代
-        for (int iter = 0; iter < max_iterations; iter++)
-        {
-            T max_off_diag = static_cast<T>(0);
-            size_t p = 0, q = 0;
-
-            // 找到最大的非对角元素
-            for (size_t i = 0; i < col; i++)
-            {
-                for (size_t j = i + 1; j < col; j++)
-                {
-                    T off_diag = std::abs(A.matrix[i][j]) + std::abs(A.matrix[j][i]);
-                    if (off_diag > max_off_diag)
-                    {
-                        max_off_diag = off_diag;
-                        p = i;
-                        q = j;
-                    }
-                }
-            }
-
-            // 检查是否收敛
-            if (max_off_diag < epsilon)
-            {
-                break;
-            }
-
-            // 计算雅可比旋转
-            T alpha = (A.matrix[p][p] - A.matrix[q][q]) / (static_cast<T>(2) * A.matrix[p][q]);
-            T beta = std::sqrt(alpha * alpha + static_cast<T>(1));
-            T c = std::sqrt((static_cast<T>(1) + beta) / (static_cast<T>(2) * beta));
-            T s = (alpha > static_cast<T>(0) ? static_cast<T>(1) : static_cast<T>(-1)) *
-                  std::sqrt((beta - static_cast<T>(1)) / (static_cast<T>(2) * beta));
-
-            // 应用雅可比旋转到 A
-            for (size_t i = 0; i < row; i++)
-            {
-                T temp1 = c * A.matrix[i][p] - s * A.matrix[i][q];
-                T temp2 = s * A.matrix[i][p] + c * A.matrix[i][q];
-                A.matrix[i][p] = temp1;
-                A.matrix[i][q] = temp2;
-            }
-
-            // 应用雅可比旋转到 U
-            for (size_t i = 0; i < row; i++)
-            {
-                T temp1 = c * U.matrix[i][p] - s * U.matrix[i][q];
-                T temp2 = s * U.matrix[i][p] + c * U.matrix[i][q];
-                U.matrix[i][p] = temp1;
-                U.matrix[i][q] = temp2;
-            }
-
-            // 应用雅可比旋转到 Vt
-            for (size_t i = 0; i < col; i++)
-            {
-                T temp1 = c * Vt.matrix[p][i] - s * Vt.matrix[q][i];
-                T temp2 = s * Vt.matrix[p][i] + c * Vt.matrix[q][i];
-                Vt.matrix[p][i] = temp1;
-                Vt.matrix[q][i] = temp2;
-            }
-        }
-
-        // 提取奇异值
-        S = Numcpp<T>(row, col, static_cast<T>(0));
-        for (size_t i = 0; i < col; i++)
-        {
-            S.matrix[i][i] = std::abs(A.matrix[i][i]);
-
-            // 确保奇异值为正
-            if (A.matrix[i][i] < static_cast<T>(0))
-            {
-                for (size_t j = 0; j < row; j++)
-                {
-                    U.matrix[j][i] = -U.matrix[j][i];
-                }
-            }
-        }
-
-        // 对奇异值进行排序（从大到小）
-        for (size_t i = 0; i < col; i++)
-        {
-            for (size_t j = i + 1; j < col; j++)
-            {
-                if (S.matrix[j][j] > S.matrix[i][i])
-                {
-                    // 交换奇异值
-                    std::swap(S.matrix[i][i], S.matrix[j][j]);
-
-                    // 交换 U 的列
-                    for (size_t k = 0; k < row; k++)
-                    {
-                        std::swap(U.matrix[k][i], U.matrix[k][j]);
-                    }
-
-                    // 交换 Vt 的行
-                    for (size_t k = 0; k < col; k++)
-                    {
-                        std::swap(Vt.matrix[i][k], Vt.matrix[j][k]);
-                    }
-                }
-            }
-        }
+        // code
     }
 #if CUDA_CHECK
     template <typename T>
     void cuda_svd(const Numcpp<T> &A, Numcpp<T> &U, Numcpp<T> &S, Numcpp<T> &Vt)
     {
-        // 分配GPU内存
-        T *d_A;
-        T *d_U;
-        T *d_S;
-        T *d_Vt;
-
-        cudaMalloc((void **)&d_A, A.row * A.col * sizeof(T));
-        cudaMalloc((void **)&d_U, A.row * A.row * sizeof(T));
-        cudaMalloc((void **)&d_S, A.col * sizeof(T));
-        cudaMalloc((void **)&d_Vt, A.col * A.col * sizeof(T));
-
-        // 将数据从2D数组复制到1D数组
-        T *h_A = new T[A.row * A.col];
-        for (int i = 0; i < A.row; i++)
-        {
-            for (int j = 0; j < A.col; j++)
-            {
-                h_A[i * A.col + j] = A.matrix[i][j];
-            }
-        }
-
-        // 复制到GPU
-        cudaMemcpy(d_A, h_A, A.row * A.col * sizeof(T), cudaMemcpyHostToDevice);
-
-        // 创建cuSOLVER句柄
-        cusolverDnHandle_t handle;
-        cusolverDnCreate(&handle);
-
-        // 计算工作空间大小
-        int lwork;
-        if (std::is_same<T, float>::value)
-        {
-            cusolverDnSgesvd_bufferSize(handle, A.row, A.col, &lwork);
-        }
-        else if (std::is_same<T, double>::value)
-        {
-            cusolverDnDgesvd_bufferSize(handle, A.row, A.col, &lwork);
-        }
-
-        // 分配工作空间
-        T *d_work;
-        cudaMalloc((void **)&d_work, lwork * sizeof(T));
-
-        // 执行SVD
-        int *devInfo;
-        cudaMalloc((void **)&devInfo, sizeof(int));
-
-        if (std::is_same<T, float>::value)
-        {
-            cusolverDnSgesvd(handle, 'A', 'A', A.row, A.col,
-                             (float *)d_A, A.row, (float *)d_S,
-                             (float *)d_U, A.row, (float *)d_Vt, A.col,
-                             (float *)d_work, lwork, NULL, devInfo);
-        }
-        else if (std::is_same<T, double>::value)
-        {
-            cusolverDnDgesvd(handle, 'A', 'A', A.row, A.col,
-                             (double *)d_A, A.row, (double *)d_S,
-                             (double *)d_U, A.row, (double *)d_Vt, A.col,
-                             (double *)d_work, lwork, NULL, devInfo);
-        }
-
-        // 检查执行状态
-        int info;
-        cudaMemcpy(&info, devInfo, sizeof(int), cudaMemcpyDeviceToHost);
-        if (info != 0)
-        {
-            std::cerr << "SVD failed with error code: " << info << std::endl;
-        }
-
-        // 将结果复制回主机
-        T *h_U = new T[A.row * A.row];
-        T *h_S = new T[A.col];
-        T *h_Vt = new T[A.col * A.col];
-
-        cudaMemcpy(h_U, d_U, A.row * A.row * sizeof(T), cudaMemcpyDeviceToHost);
-        cudaMemcpy(h_S, d_S, A.col * sizeof(T), cudaMemcpyDeviceToHost);
-        cudaMemcpy(h_Vt, d_Vt, A.col * A.col * sizeof(T), cudaMemcpyDeviceToHost);
-
-        // 转换为Numcpp格式
-        U = Numcpp<T>(A.row, A.row);
-        S = Numcpp<T>(A.col, A.col);
-        Vt = Numcpp<T>(A.col, A.col);
-
-        for (int i = 0; i < A.row; i++)
-        {
-            for (int j = 0; j < A.row; j++)
-            {
-                U.matrix[i][j] = h_U[i * A.row + j];
-            }
-        }
-
-        for (int i = 0; i < A.col; i++)
-        {
-            S.matrix[i][i] = h_S[i];
-        }
-
-        for (int i = 0; i < A.col; i++)
-        {
-            for (int j = 0; j < A.col; j++)
-            {
-                Vt.matrix[i][j] = h_Vt[i * A.col + j];
-            }
-        }
-
-        // 清理资源
-        delete[] h_A;
-        delete[] h_U;
-        delete[] h_S;
-        delete[] h_Vt;
-
-        cudaFree(d_A);
-        cudaFree(d_U);
-        cudaFree(d_S);
-        cudaFree(d_Vt);
-        cudaFree(d_work);
-        cudaFree(devInfo);
-
-        cusolverDnDestroy(handle);
+        // 仅支持实数类型
+        static_assert(std::is_same<T, float>::value || std::is_same<T, double>::value, "cuda_svd only supports float and double");
+        // code
     }
 #endif
 #define MATtoNumcpp(mat_name, Numcpp, row, col) \

@@ -17,5 +17,5 @@ app.exp
 app.lib
 mat
 load.exe
-.gitignore
 load_test.cpp
+load_test.exe

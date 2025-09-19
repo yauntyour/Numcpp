@@ -5,7 +5,7 @@
 #include "qcnn.hpp"
 
 using namespace np;
-using namespace name_qcnn;
+using namespace np_qcnn;
 
 // 复数，推荐使用C++的复数类型，支持FFT变换
 typedef std::complex<double> complex_double;
@@ -120,17 +120,18 @@ int main(int argc, char const *argv[])
         std::cout << "mat Inverse mat:" << mat.inverse() << "\n";
 
         // 直接赋值式流
-        Numcpp<int> nmat = (Numcpp<int>(4, 3) << 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);
+        Numcpp<double> nmat = (Numcpp<double>(4, 3) << 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);
         // 矩阵阵的逆
         std::cout << "nmat:" << nmat << "\n";
         std::cout << "nmat Inverse mat:" << nmat.pseudoinverse() << "\n";
 
-        Numcpp<int> U, S, Vt;
+        Numcpp<double> U, S, Vt;
         nmat.svd(U, S, Vt);
 
         std::cout << "SVD_U:" << U << "\n";
         std::cout << "SVD_S:" << S << "\n";
         std::cout << "SVD_Vt:" << Vt << "\n";
+        std::cout << "rebuild nmat:" << U * S * Vt << "\n";
 
         // lambda支持
         std::cout << "<lambda>:" << (temp<[](nc_t x, nc_t y) -> nc_t

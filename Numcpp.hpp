@@ -1475,6 +1475,40 @@ namespace np
         dataType determinant() const;
         Numcpp<dataType> inverse() const;
         Numcpp<dataType> pseudoinverse() const; // 伪逆计算
+
+        class CommaInitializer
+        {
+        public:
+            CommaInitializer(Numcpp *mat, size_t current_index) : mat_(mat), current_index_(current_index) {}
+
+            CommaInitializer &operator,(T value)
+            {
+                size_t row = current_index_ / mat_->col;
+                size_t col = current_index_ % mat_->col;
+                if (row < mat_->row && col < mat_->col)
+                {
+                    mat_->matrix[row][col] = value;
+                    current_index_++;
+                }
+                else
+                {
+                    throw std::out_of_range("Too many elements for matrix");
+                }
+                return *this;
+            }
+
+        private:
+            Numcpp *mat_;
+            size_t current_index_;
+        };
+
+        CommaInitializer operator<<(T value)
+        {
+            if (row * col == 0)
+                throw std::out_of_range("Matrix is empty");
+            matrix[0][0] = value;
+            return CommaInitializer(this, 1);
+        }
     };
     // matrix special operate
     template <typename T>

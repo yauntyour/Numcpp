@@ -611,8 +611,66 @@ namespace units
         }
         return 0;
     }
+    template <typename T>
+    void qr_decomposition_gm(T **A, size_t n, T **Q, T **R)
+    {
+        // 初始化Q和R为0
+        for (size_t i = 0; i < n; i++)
+        {
+            for (size_t j = 0; j < n; j++)
+            {
+                Q[i][j] = 0;
+                R[i][j] = 0;
+            }
+        }
 
+        for (size_t j = 0; j < n; j++)
+        {
+            T *v = new T[n]; // 存储当前列向量
+            for (size_t i = 0; i < n; i++)
+            {
+                v[i] = A[i][j];
+            }
+
+            for (size_t i = 0; i < j; i++)
+            {
+                // 计算R[i][j] = Q的第i列与A的第j列的点积
+                T dot_product = 0;
+                for (size_t k = 0; k < n; k++)
+                {
+                    dot_product += Q[k][i] * A[k][j];
+                }
+                R[i][j] = dot_product;
+
+                // 从v中减去投影分量
+                for (size_t k = 0; k < n; k++)
+                {
+                    v[k] -= R[i][j] * Q[k][i];
+                }
+            }
+
+            // 计算R[j][j] = norm(v)
+            T norm_v = 0;
+            for (size_t i = 0; i < n; i++)
+            {
+                norm_v += v[i] * v[i];
+            }
+            norm_v = sqrt(norm_v);
+            R[j][j] = norm_v;
+
+            // Q的第j列 = v / norm_v
+            for (size_t i = 0; i < n; i++)
+            {
+                Q[i][j] = v[i] / norm_v;
+            }
+
+            delete[] v;
+        }
+    }
 }; // namespace units
+
+#define mklamb(T, codes) [](T x, T y) -> T { codes }
+
 namespace np
 {
     static bool is_optimized = false;
@@ -639,7 +697,7 @@ namespace np
         Numcpp(const size_t _row, const size_t _col);
         Numcpp(const size_t _row, const size_t _col, dataType value);
         Numcpp(const Numcpp<dataType> &other);
-        Numcpp(dataType **mat, const size_t _row, const size_t _col);
+        Numcpp(dataType *mat, const size_t _row, const size_t _col);
         Numcpp(char *filename);
 // operators
 #if CUDA_CHECK
@@ -1343,7 +1401,7 @@ namespace np
         }
         /*Matrix function complex*/
         /*the col of first matrix is the same as the row of second matrix*/
-        Numcpp<dataType> operator*(const Numcpp<dataType> &other)
+        Numcpp<dataType> operator*(const Numcpp<dataType> &other) const
         {
             if (this->col != other.row)
             {
@@ -1547,8 +1605,122 @@ namespace np
             matrix[0][0] = value;
             return CommaInitializer(this, 1);
         }
-        // 优化的SVD方法
-        void svd(Numcpp<dataType> &U, Numcpp<dataType> &S, Numcpp<dataType> &Vt) const;
+        /*
+        优化的SVD方法,A = (-U) * S * (-V^T)
+        U,V左右两个正交矩阵中的值均为相反值
+        */
+        void svd(Numcpp<dataType> &U, Numcpp<dataType> &S, Numcpp<dataType> &V) const;
+
+        void zero_approximation()
+        {
+            if (this->optimization == false)
+            {
+                for (size_t i = 0; i < this->row; i++)
+                {
+                    for (size_t j = 0; j < this->col; j++)
+                    {
+                        if (this->matrix[i][j] < 1e-6)
+                        {
+                            this->matrix[i][j] *= 0;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                units::thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [](dataType **a, size_t i, size_t j)
+                                               { a[i][j] *= 0; });
+            }
+        }
+        // 检查矩阵是否对称
+        bool is_symmetric(double tolerance = 1e-6) const
+        {
+            if (row != col)
+                return false;
+            for (size_t i = 0; i < row; i++)
+            {
+                for (size_t j = 0; j < i; j++)
+                {
+                    if (fabs(matrix[i][j] - matrix[j][i]) > tolerance)
+                    {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        // 设置矩阵为单位矩阵
+        void set_identity()
+        {
+            for (size_t i = 0; i < row; i++)
+            {
+                for (size_t j = 0; j < col; j++)
+                {
+                    matrix[i][j] = (i == j) ? (dataType)1 : (dataType)0;
+                }
+            }
+        }
+        // 计算特征值和特征向量
+        std::vector<Numcpp<dataType>> eig(int max_iter = 1000, double tolerance = 1e-6) const
+        {
+            if (!is_symmetric(tolerance))
+            {
+                throw std::invalid_argument("eig only supported for symmetric matrices");
+            }
+
+            size_t n = row;
+            Numcpp<dataType> A(*this); // 工作矩阵
+            Numcpp<dataType> Q_total(n, n);
+            Q_total.set_identity(); // 初始化为单位矩阵
+
+            for (int iter = 0; iter < max_iter; iter++)
+            {
+                Numcpp<dataType> Q(n, n);
+                Numcpp<dataType> R(n, n);
+
+                // 对A进行QR分解
+                units::qr_decomposition_gm<dataType>(A.matrix, n, Q.matrix, R.matrix);
+
+                // 更新A = R * Q
+                A = R * Q;
+
+                // 更新Q_total = Q_total * Q
+                Q_total = Q_total * Q;
+
+                // 检查A是否接近对角矩阵
+                bool is_diag = true;
+                for (size_t i = 0; i < n; i++)
+                {
+                    for (size_t j = 0; j < i; j++)
+                    {
+                        if (fabs(A.matrix[i][j]) > tolerance)
+                        {
+                            is_diag = false;
+                            break;
+                        }
+                    }
+                    if (!is_diag)
+                        break;
+                }
+                if (is_diag)
+                    break;
+            }
+
+            // 从A中提取特征值（对角线元素）
+            Numcpp<dataType> eigenvalues(1, n);
+            for (size_t i = 0; i < n; i++)
+            {
+                eigenvalues.matrix[0][i] = A.matrix[i][i];
+            }
+            std::sort((eigenvalues[0]), (eigenvalues[0]) + eigenvalues.col, std::greater<double>());
+            A.zero_approximation();
+            for (size_t i = 0; i < n; i++)
+            {
+                A.matrix[i][i] = eigenvalues.matrix[0][i];
+            }
+            return {eigenvalues, Q_total, A};
+        }
     };
     // matrix special operate
     template <typename T>
@@ -1677,7 +1849,7 @@ namespace np
         }
     }
     template <typename T>
-    inline Numcpp<T>::Numcpp(T **mat, const size_t _row, const size_t _col)
+    inline Numcpp<T>::Numcpp(T *mat, const size_t _row, const size_t _col)
     {
         if (_row == 0 || _col == 0)
         {
@@ -1695,14 +1867,14 @@ namespace np
                     matrix[i] = new T[_col];
                     for (size_t j = 0; j < _col; j++)
                     {
-                        matrix[i][j] = mat[i][j];
+                        matrix[i][j] = mat[i * _row + j];
                     }
                 }
             }
             else
             {
-                units::Copy_thread_worker<T>(matrix, _row, _col, mat, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
-                                             { a[i][j] = b[i][j]; });
+                units::Copy_thread_worker<T>(matrix, _row, _col, &mat, this->maxprocs, [&](T **a, T **b, size_t i, size_t j)
+                                             { a[i][j] = (*b)[i * _row + j]; });
             }
         }
     }
@@ -1914,95 +2086,52 @@ namespace np
         return result;
     }
     template <typename T>
+    T det_cal(T **det, size_t n)
+    {
+
+        T detVal = 0; // 行列式的值
+
+        if (n == 1)
+        {
+            return det[0][0]; // 递归终止条件
+        }
+        T **tempdet = new T *[n - 1]; // 用来存储余相应的余子式
+        for (size_t i = 0; i < n - 1; i++)
+        {
+            tempdet[i] = new T[n - 1];
+        }
+        for (size_t i = 0; i < n; i++) // 第一重循环，行列式按第一行展开
+        {
+            for (size_t j = 0; j < n - 1; j++)
+                for (size_t k = 0; k < n - 1; k++)
+                {
+                    if (k < i)
+                    {
+                        tempdet[j][k] = det[j + 1][k];
+                    }
+                    else
+                    {
+                        tempdet[j][k] = det[j + 1][k + 1];
+                    }
+                }
+            detVal += det[0][i] * pow(-1.0, i) * det_cal(tempdet, n - 1);
+        }
+        for (size_t i = 0; i < n - 1; i++)
+        {
+            delete tempdet[i];
+        }
+        delete[] tempdet;
+        return detVal;
+    }
+
+    template <typename T>
     T Numcpp<T>::determinant() const
     {
         if (row != col)
         {
             throw std::invalid_argument("Matrix must be square to compute determinant.");
         }
-
-        // 复制矩阵数据以避免修改原矩阵
-        T **temp = units::mat_create<T>(row, col);
-
-        if (this->optimization == false)
-        {
-            for (size_t i = 0; i < row; i++)
-            {
-                for (size_t j = 0; j < col; j++)
-                {
-                    temp[i][j] = matrix[i][j];
-                }
-            }
-        }
-        else
-        {
-            units::Copy_thread_worker<T>(temp, row, col, matrix, this->maxprocs,
-                                         [](T **a, T **b, size_t i, size_t j)
-                                         { a[i][j] = b[i][j]; });
-        }
-
-        T det = static_cast<T>(1);
-        int sign = 1;
-
-        // LU分解 with partial pivoting
-        for (size_t k = 0; k < row; k++)
-        {
-            // 寻找主元
-            size_t max_row = k;
-            T max_val = std::abs(temp[k][k]);
-            for (size_t i = k + 1; i < row; i++)
-            {
-                T val = std::abs(temp[i][k]);
-                if (std::abs(val) > std::abs(max_val))
-                {
-                    max_val = val;
-                    max_row = i;
-                }
-            }
-
-            // 如果主元为0，则行列式为0
-            if (max_val == static_cast<T>(0))
-            {
-                units::mat_delete(temp, row);
-                return static_cast<T>(0);
-            }
-
-            // 交换行
-            if (max_row != k)
-            {
-                std::swap(temp[k], temp[max_row]);
-                sign *= -1; // 行交换改变符号
-            }
-
-            det *= temp[k][k];
-
-            // 消元 - 使用多线程优化
-            if (this->optimization && (row - k - 1) > 100)
-            {
-                units::thread_worker<T>(temp, row - k - 1, col - k, this->maxprocs,
-                                        [k, temp](T **a, size_t i, size_t j)
-                                        {
-                                            size_t row_idx = k + 1 + i;
-                                            size_t col_idx = k + j;
-                                            T factor = a[row_idx][k] / a[k][k];
-                                            a[row_idx][col_idx] -= factor * a[k][col_idx];
-                                        });
-            }
-            else
-            {
-                for (size_t i = k + 1; i < row; i++)
-                {
-                    T factor = temp[i][k] / temp[k][k];
-                    for (size_t j = k + 1; j < col; j++)
-                    {
-                        temp[i][j] -= factor * temp[k][j];
-                    }
-                }
-            }
-        }
-
-        units::mat_delete(temp, row);
-        return det * static_cast<T>(sign);
+        return det_cal(matrix, row);
     }
 
     template <typename T>
@@ -2013,221 +2142,141 @@ namespace np
             throw std::invalid_argument("Standard inverse is only defined for square matrices. Use pseudoinverse() for non-square matrices.");
         }
 
-        // 创建增广矩阵 [A | I]
-        T **aug = units::mat_create<T>(row, 2 * col);
-
-        // 初始化增广矩阵
-        if (this->optimization)
+        T det = determinant();
+        if (fabs(det) < 1e-10) // 使用适当容差检查行列式是否为0
         {
-            // 使用多线程初始化增广矩阵
-            units::thread_worker<T>(aug, row, 2 * col, this->maxprocs,
-                                    [this](T **a, size_t i, size_t j)
-                                    {
-                                        if (j < col)
-                                        {
-                                            a[i][j] = matrix[i][j];
-                                        }
-                                        else
-                                        {
-                                            a[i][j] = (j == i + col) ? static_cast<T>(1) : static_cast<T>(0);
-                                        }
-                                    });
-        }
-        else
-        {
-            for (size_t i = 0; i < row; i++)
-            {
-                for (size_t j = 0; j < col; j++)
-                {
-                    aug[i][j] = matrix[i][j];
-                }
-                for (size_t j = col; j < 2 * col; j++)
-                {
-                    aug[i][j] = (j == i + col) ? static_cast<T>(1) : static_cast<T>(0);
-                }
-            }
+            throw std::invalid_argument("Matrix is singular (determinant is zero), cannot compute inverse.");
         }
 
-        // 全选主元高斯-约旦消元
-        std::vector<size_t> col_swap(col); // 记录列交换
-        for (size_t i = 0; i < col; i++)
-            col_swap[i] = i;
-
-        for (size_t k = 0; k < row; k++)
-        {
-            // 寻找主元
-            size_t max_row = k, max_col = k;
-            T max_val = std::abs(aug[k][k]);
-            for (size_t i = k; i < row; i++)
-            {
-                for (size_t j = k; j < col; j++)
-                {
-                    T val = std::abs(aug[i][j]);
-                    if (std::abs(val) > std::abs(max_val))
-                    {
-                        max_val = val;
-                        max_row = i;
-                        max_col = j;
-                    }
-                }
-            }
-
-            if (max_val == static_cast<T>(0))
-            {
-                units::mat_delete(aug, row);
-                throw std::runtime_error("Matrix is singular and cannot be inverted.");
-            }
-
-            // 交换行
-            if (max_row != k)
-            {
-                std::swap(aug[k], aug[max_row]);
-            }
-
-            // 交换列
-            if (max_col != k)
-            {
-                for (size_t i = 0; i < row; i++)
-                {
-                    std::swap(aug[i][k], aug[i][max_col]);
-                }
-                std::swap(col_swap[k], col_swap[max_col]);
-            }
-
-            // 归一化主元行
-            T pivot = aug[k][k];
-
-            if (this->optimization)
-            {
-                // 使用多线程归一化
-                units::thread_worker<T>(aug, 1, 2 * col - k, this->maxprocs,
-                                        [k, pivot](T **a, size_t i, size_t j)
-                                        {
-                                            a[k][k + j] /= pivot;
-                                        });
-            }
-            else
-            {
-                for (size_t j = k; j < 2 * col; j++)
-                {
-                    aug[k][j] /= pivot;
-                }
-            }
-
-            // 消元 - 使用多线程优化
-            if (this->optimization && row > 100)
-            {
-                units::thread_worker<T>(aug, row, 2 * col, this->maxprocs,
-                                        [k](T **a, size_t i, size_t j)
-                                        {
-                                            if (i != k)
-                                            {
-                                                T factor = a[i][k];
-                                                a[i][j] -= factor * a[k][j];
-                                            }
-                                        });
-            }
-            else
-            {
-                for (size_t i = 0; i < row; i++)
-                {
-                    if (i == k)
-                        continue;
-                    T factor = aug[i][k];
-                    for (size_t j = k; j < 2 * col; j++)
-                    {
-                        aug[i][j] -= factor * aug[k][j];
-                    }
-                }
-            }
-        }
-
-        // 提取逆矩阵
         Numcpp<T> result(row, col);
 
-        // 根据列交换调整逆矩阵
-        if (this->optimization)
+        if (row == 1)
         {
-            units::thread_worker<T>(aug, row, col, result.matrix, this->maxprocs,
-                                    [&](T **a, T **b, size_t i, size_t j)
-                                    {
-                                        b[i][col_swap[j]] = a[i][j + col];
-                                    });
+            // 1x1矩阵的特殊情况
+            result.matrix[0][0] = 1.0 / matrix[0][0];
         }
         else
         {
+            // 计算伴随矩阵
+            Numcpp<T> adjugate(row, col);
+
             for (size_t i = 0; i < row; i++)
             {
                 for (size_t j = 0; j < col; j++)
                 {
-                    result.matrix[i][col_swap[j]] = aug[i][j + col];
+                    // 计算余子式
+                    Numcpp<T> minor(row - 1, col - 1);
+
+                    // 构建余子矩阵
+                    size_t minor_i = 0;
+                    for (size_t ii = 0; ii < row; ii++)
+                    {
+                        if (ii == i)
+                            continue;
+
+                        size_t minor_j = 0;
+                        for (size_t jj = 0; jj < col; jj++)
+                        {
+                            if (jj == j)
+                                continue;
+
+                            minor.matrix[minor_i][minor_j] = matrix[ii][jj];
+                            minor_j++;
+                        }
+                        minor_i++;
+                    }
+
+                    // 计算代数余子式并放入伴随矩阵（注意转置）
+                    T sign = ((i + j) % 2 == 0) ? 1 : -1;
+                    adjugate.matrix[j][i] = sign * minor.determinant();
                 }
             }
+
+            // 逆矩阵 = 伴随矩阵 / 行列式
+            result = adjugate * (1.0 / det);
         }
 
-        units::mat_delete(aug, row);
         return result;
     }
     template <typename T>
     Numcpp<T> Numcpp<T>::pseudoinverse() const
     {
-        // 计算伪逆: A⁺ = (AᵀA)⁻¹Aᵀ (对于满列秩矩阵)
-        // 或者使用SVD分解，但这里使用更简单的方法
-
-        // 计算转置
-        Numcpp<T> A_T = this->transpose();
-
-        // 计算 AᵀA
-        Numcpp<T> ATA = A_T * (*this);
-
-        try
+        if (row == 0 || col == 0)
         {
-            // 尝试计算逆
-            Numcpp<T> ATA_inv = ATA.inverse();
-
-            // 计算伪逆: (AᵀA)⁻¹Aᵀ
-            return ATA_inv * A_T;
+            throw std::invalid_argument("Matrix is empty");
         }
-        catch (const std::runtime_error &e)
+
+        // 计算 A^T * A
+        Numcpp<T> ATA = this->transpose() * (*this);
+
+        // 计算 ATA 的特征值和特征向量
+        auto eig_result = ATA.eig();
+        Numcpp<T> V = eig_result[1]; // 特征向量矩阵
+
+        // 计算奇异值（特征值的平方根）
+        auto S_values = (eig_result[0])<mklamb(T, {
+            return sqrt(x);
+        })>
+            NULL;
+
+        // 构建 Σ 矩阵（对角线为奇异值）
+        size_t min_dim = std::min(row, col);
+        Numcpp<T> Sigma(row, col, 0);
+        for (size_t i = 0; i < min_dim; i++)
         {
-            // 如果矩阵是奇异的，使用正则化方法
-            // 添加一个小的正则化参数
-            T lambda = static_cast<T>(1e-10);
-            Numcpp<T> regularized = ATA;
-
-            // 添加λI到对角线
-            if (this->optimization)
-            {
-                units::thread_worker<T>(regularized.matrix, regularized.row, regularized.col, this->maxprocs,
-                                        [lambda](T **a, size_t i, size_t j)
-                                        {
-                                            if (i == j)
-                                                a[i][j] += lambda;
-                                        });
-            }
-            else
-            {
-                for (size_t i = 0; i < regularized.row; i++)
-                {
-                    regularized.matrix[i][i] += lambda;
-                }
-            }
-
-            // 计算逆
-            Numcpp<T> regularized_inv = regularized.inverse();
-
-            // 计算伪逆: (AᵀA + λI)⁻¹Aᵀ
-            return regularized_inv * A_T;
+            Sigma[i][i] = S_values[0][i];
         }
+
+        // 计算 Σ 的伪逆（对角线元素取倒数，处理零奇异值）
+        Numcpp<T> Sigma_plus(col, row, 0);
+        T tolerance = 1e-6; // 设置一个小的阈值来处理零奇异值
+
+        for (size_t i = 0; i < min_dim; i++)
+        {
+            if (fabs(Sigma[i][i]) > tolerance)
+            {
+                Sigma_plus[i][i] = 1.0 / Sigma[i][i];
+            }
+            // 否则保持为零（已经是零）
+        }
+
+        // 计算伪逆：A⁺ = V * Σ⁺ * U^T
+        // 但 U = A * V * Σ⁺，所以 A⁺ = V * Σ⁺ * (A * V * Σ⁺)^T
+        Numcpp<T> this_copy(*this);
+        Numcpp<T> U = this_copy * V * Sigma_plus;
+        Numcpp<T> A_plus = V * Sigma_plus * U.transpose();
+
+        return A_plus;
     }
+
     template <typename T>
-    void Numcpp<T>::svd(Numcpp<T> &U, Numcpp<T> &S, Numcpp<T> &Vt) const
+    void Numcpp<T>::svd(Numcpp<T> &U, Numcpp<T> &S, Numcpp<T> &V) const
     {
-        if (row < col)
+        Numcpp<T> AT(*this);
+        AT.transposed();
+        Numcpp<T> ATA = (*this) * AT;
+        auto result = ATA.eig();
+
+        // 特征向量矩阵，即U
+        U = result[1];
+        Numcpp<T> Sv = (result[0])<mklamb(T, { return sqrt(x); })> NULL;
+
+        // 奇异值矩阵
+        S = Numcpp<T>(row, col, 0.0);
+        size_t mindim = std::min(row, col);
+        for (size_t i = 0; i < mindim; i++)
         {
-            throw std::invalid_argument("SVD requires matrix with row >= col");
+            S[i][i] = Sv[0][i];
         }
-        // code
+        Numcpp<T> S_inv(col, row, 0.0);
+        for (size_t i = 0; i < mindim; i++)
+        {
+            if (S[i][i] != 0)
+            {
+                S_inv[i][i] = 1.0 / S[i][i];
+            }
+        }
+        V = AT * U * S_inv.transpose();
     }
 #if CUDA_CHECK
     template <typename T>

@@ -112,7 +112,9 @@ int main(int argc, char const *argv[])
 
         // 流式创建一个方阵
         Numcpp<nc_t> mat(3, 3);
-        mat << 1, 2, 3, 4, 5, 6, 7, 8, 9;
+        mat << 4, 1, 1,
+            1, 3, 2,
+            1, 2, 5;
 
         // 方阵的逆、行列式
         std::cout << "mat:" << mat << "\n";
@@ -120,18 +122,20 @@ int main(int argc, char const *argv[])
         std::cout << "mat Inverse mat:" << mat.inverse() << "\n";
 
         // 直接赋值式流
-        Numcpp<double> nmat = (Numcpp<double>(4, 3) << 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);
+        Numcpp<double> nmat = (Numcpp<double>(4, 3) << 4, 1, 1, 1,
+                               3, 2, 1, 2,
+                               5, 5, 1, 1);
         // 矩阵阵的逆
         std::cout << "nmat:" << nmat << "\n";
-        std::cout << "nmat Inverse mat:" << nmat.pseudoinverse() << "\n";
+        std::cout << "nmat pseudoinverse mat:" << nmat.pseudoinverse() << "\n";
 
-        Numcpp<double> U, S, Vt;
-        nmat.svd(U, S, Vt);
+        Numcpp<double> U, S, V;
+        nmat.svd(U, S, V);
 
         std::cout << "SVD_U:" << U << "\n";
         std::cout << "SVD_S:" << S << "\n";
-        std::cout << "SVD_Vt:" << Vt << "\n";
-        std::cout << "rebuild nmat:" << U * S * Vt << "\n";
+        std::cout << "SVD_V:" << V << "\n";
+        std::cout << "rebuild nmat:" << U * S * V.transpose() << "\n";
 
         // lambda支持
         std::cout << "<lambda>:" << (temp<[](nc_t x, nc_t y) -> nc_t

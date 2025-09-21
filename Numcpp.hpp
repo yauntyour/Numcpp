@@ -670,7 +670,7 @@ namespace units
     }
 }; // namespace units
 
-#define mklamb(T, codes) ([](T x, T y) -> T codes)
+#define mklamb(T, codes, ...) ([__VA_ARGS__](T x, T y) -> T codes)
 
 namespace np
 {

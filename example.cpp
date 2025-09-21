@@ -137,11 +137,6 @@ int main(int argc, char const *argv[])
                   << std::endl;
         std::cout << "<func>:" << (n<sinxy> NULL)
                   << std::endl;
-
-        Numcpp<nc_t> input(3, 3, 1);
-        Numcpp<nc_t> val(3, 9, 0);
-        Numcpp<nc_t> w_1(3, 9, 1);
-        Numcpp<nc_t> b_1(3, 9, 1);
     }
     catch (const std::exception &e)
     {

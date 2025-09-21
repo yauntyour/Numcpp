@@ -118,6 +118,7 @@ int main(int argc, char const *argv[])
 
         // 方阵的逆、行列式
         std::cout << "mat:" << mat << "\n";
+        std::cout << "mat's sum:" << mat.sum() << "\n";
         std::cout << "mat Determinant value:" << mat.determinant() << "\n";
         std::cout << "mat Inverse mat:" << mat.inverse() << "\n";
 

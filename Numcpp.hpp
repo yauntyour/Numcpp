@@ -11,6 +11,7 @@
 #include <complex>
 #include <fstream>
 #include <vector>
+#include <algorithm>
 #define NP_PI 3.14159265358979
 
 #define MATtoPtr2D(T, value_name, change_name, row, col) \
@@ -669,7 +670,7 @@ namespace units
     }
 }; // namespace units
 
-#define mklamb(T, codes) [](T x, T y) -> T { codes }
+#define mklamb(T, codes) ([](T x, T y) -> T codes)
 
 namespace np
 {
@@ -883,7 +884,7 @@ namespace np
                 }
             }
         }
-        Numcpp<dataType> operator+(const Numcpp<dataType> &other)
+        Numcpp<dataType> operator+(const Numcpp<dataType> &other) const
         {
             if (other.row != this->row || other.col != this->col)
             {
@@ -987,7 +988,7 @@ namespace np
                 }
             }
         }
-        Numcpp<dataType> operator-(const Numcpp<dataType> &other)
+        Numcpp<dataType> operator-(const Numcpp<dataType> &other) const
         {
             if (other.row != this->row || other.col != this->col)
             {
@@ -1044,7 +1045,7 @@ namespace np
                 return result;
             }
         }
-        Numcpp<dataType> operator+(dataType n)
+        Numcpp<dataType> operator+(dataType n) const
         {
             Numcpp<dataType> result(this->row, this->col, n);
             if (this->optimization == false)
@@ -1132,7 +1133,7 @@ namespace np
 #endif
             }
         }
-        Numcpp<dataType> operator-(dataType n)
+        Numcpp<dataType> operator-(dataType n) const
         {
             Numcpp<dataType> result(this->matrix, this->row, this->col);
             if (this->optimization == false)
@@ -1221,7 +1222,7 @@ namespace np
             }
         }
 
-        Numcpp<dataType> operator*(dataType n)
+        Numcpp<dataType> operator*(dataType n) const
         {
             Numcpp<dataType> result(this->row, this->col, n);
             if (this->optimization == false)
@@ -1309,7 +1310,7 @@ namespace np
 #endif
             }
         }
-        Numcpp<dataType> operator/(dataType n)
+        Numcpp<dataType> operator/(dataType n) const
         {
             assert(n != 0);
             Numcpp<dataType> result(this->row, this->col);
@@ -1445,7 +1446,7 @@ namespace np
             }
         }
         /*index for each*/
-        dataType *operator[](const size_t index)
+        dataType *operator[](const size_t index) const
         {
             return index < this->row ? this->matrix[index] : NULL;
         }
@@ -1454,7 +1455,7 @@ namespace np
         /*the transposition of this matrix*/
         Numcpp transpose() const;
         void Hadamard_self(const Numcpp<dataType> &);
-        Numcpp Hadamard(const Numcpp<dataType> &);
+        Numcpp Hadamard(const Numcpp<dataType> &) const;
 
         void optimized(bool flag)
         {
@@ -1480,7 +1481,7 @@ namespace np
 // FFT only the cuda disable can used
 #if !CUDA_CHECK
         // 正向/反向FFT（返回新矩阵）
-        Numcpp<dataType> fft(int inv)
+        Numcpp<dataType> fft(int inv) const
         {
             static_assert(
                 std::is_same_v<dataType, std::complex<float>> ||
@@ -1530,6 +1531,25 @@ namespace np
             if (inv < 0)
             {
                 *this *= dataType(1.0 / this->col, 0);
+            }
+        }
+        dataType sum()
+        {
+            dataType sum_value = 0;
+            if (this->optimization == false)
+            {
+                for (size_t i = 0; i < this->row; i++)
+                {
+                    for (size_t j = 0; j < this->col; j++)
+                    {
+                        sum_value += this->matrix[i][j];
+                    }
+                }
+            }
+            else
+            {
+                units::thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [&sum_value](dataType **a, size_t i, size_t j)
+                                               { sum_value += a[i][j]; });
             }
         }
 #endif
@@ -2053,7 +2073,7 @@ namespace np
         }
     }
     template <typename T>
-    Numcpp<T> Numcpp<T>::Hadamard(const Numcpp<T> &other)
+    Numcpp<T> Numcpp<T>::Hadamard(const Numcpp<T> &other) const
     {
         if (other.row != this->row || other.col != this->col)
         {
@@ -2218,7 +2238,6 @@ namespace np
             return sqrt(x);
         })>
             NULL;
-
         // 构建 Σ 矩阵（对角线为奇异值）
         size_t min_dim = std::min(row, col);
         Numcpp<T> Sigma(row, col, 0);

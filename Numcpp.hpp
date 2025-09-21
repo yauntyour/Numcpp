@@ -1533,6 +1533,7 @@ namespace np
                 *this *= dataType(1.0 / this->col, 0);
             }
         }
+#endif
         dataType sum()
         {
             dataType sum_value = 0;
@@ -1548,11 +1549,12 @@ namespace np
             }
             else
             {
-                units::thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [&sum_value](dataType **a, size_t i, size_t j)
-                                               { sum_value += a[i][j]; });
+                dataType *p = &sum_value;
+                units::thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [p](dataType **a, size_t i, size_t j)
+                                               { (*p) += a[i][j]; });
             }
+            return sum_value;
         }
-#endif
         void save(const char *path)
         {
             FILE *fp = fopen(path, "ab");

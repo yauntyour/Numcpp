@@ -111,7 +111,7 @@ int main(int argc, char const *argv[])
         std::cout << "temp load in Out:" << temp << "\n";
 
         // 流式创建一个方阵
-        Numcpp<nc_t> mat(3, 3);
+        Numcpp<int> mat(3, 3);
         mat << 4, 1, 1,
             1, 3, 2,
             1, 2, 5;

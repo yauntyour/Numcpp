@@ -2,10 +2,8 @@
 #include <math.h>
 #include <complex>
 #include "Numcpp.hpp"
-#include "qcnn.hpp"
 
 using namespace np;
-using namespace np_qcnn;
 
 // 复数，推荐使用C++的复数类型，支持FFT变换
 typedef std::complex<double> complex_double;
@@ -15,12 +13,6 @@ typedef std::complex<double> complex_double;
 nc_t sinxy(nc_t x, nc_t y)
 {
     return nc_t(sin(x.real()) * sin(y.real()), (sin(x.imag()) * sin(y.imag())));
-}
-// 定义更新权重的函数
-// void updata(std::vector<np::Numcpp<double>> &results, np::Numcpp<double> &loss, size_t offset)
-backward_func_make(nc_t, updata)
-{
-    std::cout << "Updata[" << offset << "]:" << loss << results[offset];
 }
 
 void generate(Numcpp<nc_t> &nc)
@@ -150,23 +142,6 @@ int main(int argc, char const *argv[])
         Numcpp<nc_t> val(3, 9, 0);
         Numcpp<nc_t> w_1(3, 9, 1);
         Numcpp<nc_t> b_1(3, 9, 1);
-        std::vector<qcnn_layer<nc_t>> list = {
-            {w_1, [](Numcpp<nc_t> &A, Numcpp<nc_t> &B) -> Numcpp<nc_t>
-             {
-                 return A * B;
-             },
-             NULL},
-            // 使用快捷宏创建lambda表达式
-            {b_1, (active_lambda_make(nc_t) {
-                 return A + B;
-             }),
-             updata}};
-        qcnn<nc_t> qc(list);
-        std::cout << "arithmetic result: " << qc.arithmetic(input) << std::endl;
-        auto loss = qc.loss(val);
-        qc.updata(loss);
-        auto s_loss = qc.loss_squ(val);
-        std::cout << "s_loss: " << s_loss;
     }
     catch (const std::exception &e)
     {

@@ -1631,7 +1631,63 @@ namespace np
         优化的SVD方法,A = (-U) * S * (-V^T)
         U,V左右两个正交矩阵中的值均为相反值
         */
-        void svd(Numcpp<dataType> &U, Numcpp<dataType> &S, Numcpp<dataType> &V) const;
+        void svd(Numcpp<dataType> &U, Numcpp<dataType> &S, Numcpp<dataType> &V) const
+        {
+            Numcpp<dataType> AT(*this);
+            AT.transposed();
+            Numcpp<dataType> ATA = (*this) * AT;
+            auto result = ATA.eig();
+
+            // 特征向量矩阵，即U
+            U = result[1];
+            Numcpp<dataType> Sv = (result[0])<mklamb(dataType, { return sqrt(x); })> NULL;
+
+            // 奇异值矩阵
+            S = Numcpp<dataType>(row, col, 0.0);
+            size_t mindim = std::min(row, col);
+            for (size_t i = 0; i < mindim; i++)
+            {
+                S[i][i] = Sv[0][i];
+            }
+            Numcpp<dataType> S_inv(col, row, 0.0);
+            for (size_t i = 0; i < mindim; i++)
+            {
+                if (S[i][i] != 0)
+                {
+                    S_inv[i][i] = 1.0 / S[i][i];
+                }
+            }
+            V = AT * U * S_inv.transpose();
+        };
+        std::vector<Numcpp<dataType>> svd() const
+        {
+            Numcpp<dataType> AT(*this);
+            AT.transposed();
+            Numcpp<dataType> ATA = (*this) * AT;
+            auto result = ATA.eig();
+
+            // 特征向量矩阵，即U
+            Numcpp<dataType> U = result[1];
+            Numcpp<dataType> Sv = (result[0])<mklamb(dataType, { return sqrt(x); })> NULL;
+
+            // 奇异值矩阵
+            Numcpp<dataType> S = Numcpp<dataType>(row, col, 0.0);
+            size_t mindim = std::min(row, col);
+            for (size_t i = 0; i < mindim; i++)
+            {
+                S[i][i] = Sv[0][i];
+            }
+            Numcpp<dataType> S_inv(col, row, 0.0);
+            for (size_t i = 0; i < mindim; i++)
+            {
+                if (S[i][i] != 0)
+                {
+                    S_inv[i][i] = 1.0 / S[i][i];
+                }
+            }
+            Numcpp<dataType> V = AT * U * S_inv.transpose();
+            return {U, S, V};
+        };
 
         void zero_approximation()
         {
@@ -2268,36 +2324,6 @@ namespace np
         Numcpp<T> A_plus = V * Sigma_plus * U.transpose();
 
         return A_plus;
-    }
-
-    template <typename T>
-    void Numcpp<T>::svd(Numcpp<T> &U, Numcpp<T> &S, Numcpp<T> &V) const
-    {
-        Numcpp<T> AT(*this);
-        AT.transposed();
-        Numcpp<T> ATA = (*this) * AT;
-        auto result = ATA.eig();
-
-        // 特征向量矩阵，即U
-        U = result[1];
-        Numcpp<T> Sv = (result[0])<mklamb(T, { return sqrt(x); })> NULL;
-
-        // 奇异值矩阵
-        S = Numcpp<T>(row, col, 0.0);
-        size_t mindim = std::min(row, col);
-        for (size_t i = 0; i < mindim; i++)
-        {
-            S[i][i] = Sv[0][i];
-        }
-        Numcpp<T> S_inv(col, row, 0.0);
-        for (size_t i = 0; i < mindim; i++)
-        {
-            if (S[i][i] != 0)
-            {
-                S_inv[i][i] = 1.0 / S[i][i];
-            }
-        }
-        V = AT * U * S_inv.transpose();
     }
 #if CUDA_CHECK
     template <typename T>

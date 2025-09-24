@@ -1890,14 +1890,14 @@ namespace np
                     matrix[i] = new T[_col];
                     for (size_t j = 0; j < _col; j++)
                     {
-                        matrix[i][j] = mat[i * _row + j];
+                        matrix[i][j] = mat[i * _col + j];
                     }
                 }
             }
             else
             {
                 units::Copy_thread_worker<T>(matrix, _row, _col, &mat, this->maxprocs, [&](T **a, T **b, size_t i, size_t j)
-                                             { a[i][j] = (*b)[i * _row + j]; });
+                                             { a[i][j] = (*b)[i * _col + j]; });
             }
         }
     }

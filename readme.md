@@ -6,26 +6,18 @@
 #include <iostream>
 #include <math.h>
 #include <complex>
-#include "qcnn.hpp"
+#include "Numcpp.hpp"
 
 using namespace np;
-using namespace name_qcnn;
 
 // 复数，推荐使用C++的复数类型，支持FFT变换
 typedef std::complex<double> complex_double;
 
-// 理论上模板要被同一个类型实例化
 #define nc_t complex_double
 
 nc_t sinxy(nc_t x, nc_t y)
 {
-    return nc_t(sin(x.real()) * sin(y.real()), (sin(x.imag()) * sin(y.imag())));
-}
-// 定义更新权重的函数
-// void updata(std::vector<np::Numcpp<double>> &results, np::Numcpp<double> &loss, size_t offset)
-backward_func_make(nc_t, updata)
-{
-    std::cout << "Updata[" << offset << "]:" << loss << results[offset];
+    return nc_t(sin(x.real()), sin(x.imag()));
 }
 
 void generate(Numcpp<nc_t> &nc)
@@ -115,42 +107,41 @@ int main(int argc, char const *argv[])
         Numcpp<nc_t> temp = load<nc_t>("mat");
         std::cout << "temp load in Out:" << temp << "\n";
 
-        // 创建一个方阵
-        Numcpp<nc_t> mat(3, 3);
-        generate(mat);
+        // 流式创建一个方阵
+        Numcpp<int> mat(3, 3);
+        mat << 4, 1, 1,
+            1, 3, 2,
+            1, 2, 5;
+
+        // 方阵的逆、行列式
         std::cout << "mat:" << mat << "\n";
-        std::cout << "Determinant value:" << mat.determinant() << "\n";
-        std::cout << "Inverse mat:" << mat.inverse() << "\n";
+        std::cout << "mat's sum:" << mat.sum() << "\n";
+        std::cout << "mat Determinant value:" << mat.determinant() << "\n";
+        std::cout << "mat Inverse mat:" << mat.inverse() << "\n";
+
+        // 直接赋值式流
+        Numcpp<double> nmat = (Numcpp<double>(4, 3) << 4, 1, 1, 1,
+                               3, 2, 1, 2,
+                               5, 5, 1, 1);
+        // 矩阵阵的逆
+        std::cout << "nmat:" << nmat << "\n";
+        std::cout << "nmat pseudoinverse mat:" << nmat.pseudoinverse() << "\n";
+
+        Numcpp<double> U, S, V;
+        nmat.svd(U, S, V);
+
+        std::cout << "SVD_U:" << U << "\n";
+        std::cout << "SVD_S:" << S << "\n";
+        std::cout << "SVD_V:" << V << "\n";
+        std::cout << "rebuild nmat:" << U * S * V.transpose() << "\n";
 
         // lambda支持
         std::cout << "<lambda>:" << (temp<[](nc_t x, nc_t y) -> nc_t
-                                          { return nc_t(sin(x.real()) * sin(y.real()), (sin(x.imag()) * sin(y.imag()))); }>
+                                          { return nc_t(sin(x.real()), sin(x.imag())); }>
                                          NULL)
                   << std::endl;
         std::cout << "<func>:" << (n<sinxy> NULL)
                   << std::endl;
-
-        Numcpp<nc_t> input(3, 3, 1);
-        Numcpp<nc_t> val(3, 9, 0);
-        Numcpp<nc_t> w_1(3, 9, 1);
-        Numcpp<nc_t> b_1(3, 9, 1);
-        std::vector<qcnn_layer<nc_t>> list = {
-            {w_1, [](Numcpp<nc_t> &A, Numcpp<nc_t> &B) -> Numcpp<nc_t>
-             {
-                 return A * B;
-             },
-             NULL},
-            // 使用快捷宏创建lambda表达式
-            {b_1, (active_lambda_make(nc_t) {
-                 return A + B;
-             }),
-             updata}};
-        qcnn<nc_t> qc(list);
-        std::cout << "arithmetic result: " << qc.arithmetic(input) << std::endl;
-        auto loss = qc.loss(val);
-        qc.updata(loss);
-        auto s_loss = qc.loss_squ(val);
-        std::cout << "s_loss: " << s_loss;
     }
     catch (const std::exception &e)
     {
@@ -193,7 +184,7 @@ nc / number -> Numcpp
 Numcpp<typename> result = nc + matrix;
 Numcpp<typename> result = nc - matrix;
 
-Numcpp<typename> result = nc * matrix;//数乘
+Numcpp<typename> result = nc * number;//数乘
 Numcpp<typename> result = nc * matrix;//矩阵乘法
 ```
 

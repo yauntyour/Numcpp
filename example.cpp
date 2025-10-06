@@ -12,7 +12,7 @@ typedef std::complex<double> complex_double;
 
 nc_t sinxy(nc_t x, nc_t y)
 {
-    return nc_t(sin(x.real()) * sin(y.real()), (sin(x.imag()) * sin(y.imag())));
+    return nc_t(sin(x.real()), sin(x.imag()));
 }
 
 void generate(Numcpp<nc_t> &nc)
@@ -132,7 +132,7 @@ int main(int argc, char const *argv[])
 
         // lambda支持
         std::cout << "<lambda>:" << (temp<[](nc_t x, nc_t y) -> nc_t
-                                          { return nc_t(sin(x.real()) * sin(y.real()), (sin(x.imag()) * sin(y.imag()))); }>
+                                          { return nc_t(sin(x.real()), sin(x.imag())); }>
                                          NULL)
                   << std::endl;
         std::cout << "<func>:" << (n<sinxy> NULL)

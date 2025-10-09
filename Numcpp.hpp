@@ -2176,7 +2176,7 @@ namespace np
         if (row == 1)
         {
             // 1x1矩阵的特殊情况
-            result.matrix[0][0] = 1.0 / matrix[0][0];
+            result.matrix[0][0] = ((T)1) / matrix[0][0];
         }
         else
         {

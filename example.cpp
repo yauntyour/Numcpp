@@ -121,6 +121,8 @@ int main(int argc, char const *argv[])
         // 矩阵阵的逆
         std::cout << "nmat:" << nmat << "\n";
         std::cout << "nmat pseudoinverse mat:" << nmat.pseudoinverse() << "\n";
+        std::cout << "nmat[0:]:" << nmat.srow(0) << std::endl;
+        std::cout << "nmat[:2]:" << nmat.scol(2) << std::endl;
 
         Numcpp<double> U, S, V;
         nmat.svd(U, S, V);
@@ -137,8 +139,6 @@ int main(int argc, char const *argv[])
                   << std::endl;
         std::cout << "<func>:" << (n<sinxy> NULL)
                   << std::endl;
-        //Numcpp<double> mat_col = temp[0];
-        //std::cout << mat_col << std::endl;
     }
     catch (const std::exception &e)
     {

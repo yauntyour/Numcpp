@@ -126,6 +126,8 @@ int main(int argc, char const *argv[])
         // 矩阵阵的逆
         std::cout << "nmat:" << nmat << "\n";
         std::cout << "nmat pseudoinverse mat:" << nmat.pseudoinverse() << "\n";
+        std::cout << "nmat[0:]:" << nmat.srow(0) << std::endl;
+        std::cout << "nmat[:2]:" << nmat.scol(2) << std::endl;
 
         Numcpp<double> U, S, V;
         nmat.svd(U, S, V);
@@ -188,10 +190,12 @@ Numcpp<typename> result = nc * number;//数乘
 Numcpp<typename> result = nc * matrix;//矩阵乘法
 ```
 
-### 解矩阵运算（下标访问）
+### 解矩阵运算
 
 ```c++
-typename data = nc[x][y];
+typename data = nc[x][y];//下标访问
+nc.srow(index) -> Numcpp //行提取
+nc.scol(index) -> Numcpp //列提取
 ```
 
 ### 矩阵的哈达马乘积（Hadamard product）

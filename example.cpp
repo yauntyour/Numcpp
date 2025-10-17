@@ -137,6 +137,8 @@ int main(int argc, char const *argv[])
                   << std::endl;
         std::cout << "<func>:" << (n<sinxy> NULL)
                   << std::endl;
+        //Numcpp<double> mat_col = temp[0];
+        //std::cout << mat_col << std::endl;
     }
     catch (const std::exception &e)
     {

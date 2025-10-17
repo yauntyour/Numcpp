@@ -670,7 +670,7 @@ namespace units
     }
 }; // namespace units
 
-#define mklamb(T, codes, ...) ([__VA_ARGS__](T x, T y) -> T codes)
+#define mklamb(T, codes, ...) ([__VA_ARGS__](T x, T y)->T codes)
 
 namespace np
 {
@@ -1449,6 +1449,26 @@ namespace np
         dataType *operator[](const size_t index) const
         {
             return index < this->row ? this->matrix[index] : NULL;
+        }
+        Numcpp<dataType> srow(const size_t index) const
+        {
+            return index < this->row ? Numcpp<dataType>(this->matrix[index], 1, this->col) : Numcpp<dataType>();
+        }
+        Numcpp<dataType> scol(const size_t index) const
+        {
+            if (index < this->col)
+            {
+                Numcpp<dataType> result(this->row, 1);
+                for (size_t i = 0; i < this->row; i++)
+                {
+                    result[i][0] = this->matrix[i][index];
+                }
+                return result;
+            }
+            else
+            {
+                return Numcpp();
+            }
         }
         /*transposed this matrix*/
         void transposed();

@@ -2368,4 +2368,552 @@ namespace np
     }
 } // namespace np
 
+// tools of matrix
+namespace np
+{
+
+    /**
+     * 计算矩阵中最大面积的实心矩形（全1矩形）
+     * @param mat 输入矩阵，应为二值矩阵（0和1）
+     * @return 最大实心矩形的面积
+     */
+    template <typename T>
+    size_t maximalRectangle(const Numcpp<T> &mat)
+    {
+        if (mat.row == 0 || mat.col == 0)
+            return 0;
+
+        size_t maxArea = 0;
+        std::vector<T> heights(mat.col, 0);
+
+        // 将矩阵转换为柱状图问题
+        for (size_t i = 0; i < mat.row; i++)
+        {
+            // 更新高度数组
+            for (size_t j = 0; j < mat.col; j++)
+            {
+                if (mat[i][j] != 0)
+                { // 非零值视为1
+                    heights[j] += 1;
+                }
+                else
+                {
+                    heights[j] = 0;
+                }
+            }
+
+            // 使用单调栈计算当前行的最大矩形面积
+            std::stack<size_t> st;
+            size_t j = 0;
+
+            while (j < heights.size())
+            {
+                if (st.empty() || heights[st.top()] <= heights[j])
+                {
+                    st.push(j++);
+                }
+                else
+                {
+                    size_t top_index = st.top();
+                    st.pop();
+                    size_t width = st.empty() ? j : j - st.top() - 1;
+                    size_t area = heights[top_index] * width;
+                    maxArea = std::max(maxArea, area);
+                }
+            }
+
+            while (!st.empty())
+            {
+                size_t top_index = st.top();
+                st.pop();
+                size_t width = st.empty() ? heights.size() : heights.size() - st.top() - 1;
+                size_t area = heights[top_index] * width;
+                maxArea = std::max(maxArea, area);
+            }
+        }
+
+        return maxArea;
+    }
+
+    /**
+     * 查找最大实心矩形的位置和尺寸
+     * @param mat 输入矩阵
+     * @return 包含矩形左上角坐标和尺寸的结构体
+     */
+    struct Rectangle
+    {
+        size_t top, left, height, width, area;
+    };
+
+    template <typename T>
+    Rectangle findMaximalRectangle(const Numcpp<T> &mat)
+    {
+        Rectangle result = {0, 0, 0, 0, 0};
+
+        if (mat.row == 0 || mat.col == 0)
+            return result;
+
+        std::vector<T> heights(mat.col, 0);
+        std::vector<size_t> left(mat.col, 0);
+        std::vector<size_t> right(mat.col, mat.col);
+
+        for (size_t i = 0; i < mat.row; i++)
+        {
+            // 更新高度
+            for (size_t j = 0; j < mat.col; j++)
+            {
+                if (mat[i][j] != 0)
+                {
+                    heights[j] += 1;
+                }
+                else
+                {
+                    heights[j] = 0;
+                }
+            }
+
+            // 更新左边界
+            size_t current_left = 0;
+            for (size_t j = 0; j < mat.col; j++)
+            {
+                if (mat[i][j] != 0)
+                {
+                    left[j] = std::max(left[j], current_left);
+                }
+                else
+                {
+                    left[j] = 0;
+                    current_left = j + 1;
+                }
+            }
+
+            // 更新右边界
+            size_t current_right = mat.col;
+            for (int j = mat.col - 1; j >= 0; j--)
+            {
+                if (mat[i][j] != 0)
+                {
+                    right[j] = std::min(right[j], current_right);
+                }
+                else
+                {
+                    right[j] = mat.col;
+                    current_right = j;
+                }
+            }
+
+            // 计算当前行的最大矩形
+            for (size_t j = 0; j < mat.col; j++)
+            {
+                size_t area = heights[j] * (right[j] - left[j]);
+                if (area > result.area)
+                {
+                    result.area = area;
+                    result.top = i - heights[j] + 1;
+                    result.left = left[j];
+                    result.height = heights[j];
+                    result.width = right[j] - left[j];
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * 将矩阵二值化（用于处理非二值矩阵）
+     * @param mat 输入矩阵
+     * @param threshold 阈值，大于等于此值的视为1，否则为0
+     * @return 二值化后的矩阵
+     */
+    template <typename T>
+    Numcpp<T> binarizeMatrix(const Numcpp<T> &mat, T threshold)
+    {
+        Numcpp<T> result(mat.row, mat.col);
+
+        for (size_t i = 0; i < mat.row; i++)
+        {
+            for (size_t j = 0; j < mat.col; j++)
+            {
+                result[i][j] = (mat[i][j] >= threshold) ? 1 : 0;
+            }
+        }
+
+        return result;
+    }
+
+} // namespace np
+namespace np
+{
+
+    /**
+     * 生成高斯随机矩阵的配置参数
+     */
+    struct GaussianConfig
+    {
+        double mean = 0.0;     // 均值
+        double stddev = 1.0;   // 标准差
+        unsigned int seed = 0; // 随机种子 (0表示使用随机设备)
+    };
+
+    /**
+     * 方法1: 使用Box-Muller变换生成高斯随机数
+     * 这是经典的高斯随机数生成方法
+     */
+    template <typename T>
+    class BoxMullerGenerator
+    {
+    private:
+        std::mt19937 generator;
+        std::uniform_real_distribution<T> uniform;
+        T z0, z1;
+        bool hasSpare = false;
+
+    public:
+        BoxMullerGenerator(unsigned int seed = 0)
+        {
+            if (seed == 0)
+            {
+                std::random_device rd;
+                seed = rd();
+            }
+            generator.seed(seed);
+            uniform = std::uniform_real_distribution<T>(0.0, 1.0);
+        }
+
+        T generate(T mean = 0.0, T stddev = 1.0)
+        {
+            if (hasSpare)
+            {
+                hasSpare = false;
+                return z1 * stddev + mean;
+            }
+
+            T u, v, s;
+            do
+            {
+                u = uniform(generator) * 2.0 - 1.0;
+                v = uniform(generator) * 2.0 - 1.0;
+                s = u * u + v * v;
+            } while (s >= 1.0 || s == 0.0);
+
+            T mul = std::sqrt(-2.0 * std::log(s) / s);
+            z0 = u * mul;
+            z1 = v * mul;
+            hasSpare = true;
+
+            return z0 * stddev + mean;
+        }
+    };
+
+    /**
+     * 方法2: 使用C++11的std::normal_distribution
+     * 更现代且高效的方法
+     */
+    template <typename T>
+    class StandardGaussianGenerator
+    {
+    private:
+        std::mt19937 generator;
+        std::normal_distribution<T> normal;
+
+    public:
+        StandardGaussianGenerator(unsigned int seed = 0) : normal(0.0, 1.0)
+        {
+            if (seed == 0)
+            {
+                std::random_device rd;
+                seed = rd();
+            }
+            generator.seed(seed);
+        }
+
+        T generate(T mean = 0.0, T stddev = 1.0)
+        {
+            return normal(generator) * stddev + mean;
+        }
+    };
+
+    /**
+     * 生成高斯随机矩阵 - 主函数
+     * @param rows 行数
+     * @param cols 列数
+     * @param config 高斯分布配置
+     * @param useBoxMuller 是否使用Box-Muller方法 (默认使用std::normal_distribution)
+     * @return 高斯随机矩阵
+     */
+    template <typename T>
+    Numcpp<T> randn(size_t rows, size_t cols,
+                    const GaussianConfig &config = GaussianConfig(),
+                    bool useBoxMuller = false)
+    {
+
+        if (rows == 0 || cols == 0)
+        {
+            throw std::invalid_argument("Matrix dimensions must be positive");
+        }
+
+        Numcpp<T> result(rows, cols);
+
+        if (useBoxMuller)
+        {
+            // 使用Box-Muller方法
+            BoxMullerGenerator<T> generator(config.seed);
+            for (size_t i = 0; i < rows; i++)
+            {
+                for (size_t j = 0; j < cols; j++)
+                {
+                    result[i][j] = generator.generate(config.mean, config.stddev);
+                }
+            }
+        }
+        else
+        {
+            // 使用标准库方法
+            StandardGaussianGenerator<T> generator(config.seed);
+            for (size_t i = 0; i < rows; i++)
+            {
+                for (size_t j = 0; j < cols; j++)
+                {
+                    result[i][j] = generator.generate(config.mean, config.stddev);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * 多线程版本的高斯随机矩阵生成
+     * 利用Numcpp的多线程优化功能
+     */
+    template <typename T>
+    Numcpp<T> randn_parallel(size_t rows, size_t cols,
+                             const GaussianConfig &config = GaussianConfig(),
+                             size_t thread_count = 4)
+    {
+
+        if (rows == 0 || cols == 0)
+        {
+            throw std::invalid_argument("Matrix dimensions must be positive");
+        }
+
+        Numcpp<T> result(rows, cols);
+        result.optimized(true);
+        result.maxprocs_set(thread_count);
+
+        // 为每个线程创建独立的随机数生成器
+        std::vector<StandardGaussianGenerator<T>> generators;
+        for (size_t i = 0; i < thread_count; i++)
+        {
+            generators.emplace_back(config.seed + i);
+        }
+
+        // 使用多线程填充矩阵
+        units::thread_worker<T>(
+            result.matrix, rows, cols,
+            thread_count,
+            [&](T **mat, size_t i, size_t j)
+            {
+                size_t thread_id = (i * cols + j) % thread_count;
+                mat[i][j] = generators[thread_id].generate(config.mean, config.stddev);
+            });
+
+        return result;
+    }
+
+    /**
+     * 生成协方差矩阵相关的高斯随机矩阵
+     * 用于生成具有特定协方差结构的多变量高斯数据
+     */
+    template <typename T>
+    Numcpp<T> multivariate_randn(size_t n_samples, const Numcpp<T> &covariance,
+                                 const Numcpp<T> &mean = Numcpp<T>())
+    {
+
+        if (covariance.row != covariance.col)
+        {
+            throw std::invalid_argument("Covariance matrix must be square");
+        }
+
+        size_t n_features = covariance.row;
+
+        // 如果没有提供均值向量，使用零向量
+        Numcpp<T> mean_vector;
+        if (mean.row == 0)
+        {
+            mean_vector = Numcpp<T>(1, n_features, 0.0);
+        }
+        else if (mean.row == 1 && mean.col == n_features)
+        {
+            mean_vector = mean;
+        }
+        else
+        {
+            throw std::invalid_argument("Mean must be a 1 x n_features vector");
+        }
+
+        // 对协方差矩阵进行Cholesky分解: covariance = L * L^T
+        Numcpp<T> L = cholesky_decomposition(covariance);
+
+        // 生成标准高斯随机矩阵
+        Numcpp<T> Z = randn<T>(n_samples, n_features);
+
+        // 转换: X = mean + Z * L^T
+        Numcpp<T> X = Z * L.transpose();
+
+        // 添加均值
+        for (size_t i = 0; i < n_samples; i++)
+        {
+            for (size_t j = 0; j < n_features; j++)
+            {
+                X[i][j] += mean_vector[0][j];
+            }
+        }
+
+        return X;
+    }
+
+    /**
+     * Cholesky分解实现
+     * 用于多变量高斯随机数生成
+     */
+    template <typename T>
+    Numcpp<T> cholesky_decomposition(const Numcpp<T> &A)
+    {
+        if (A.row != A.col)
+        {
+            throw std::invalid_argument("Matrix must be square for Cholesky decomposition");
+        }
+
+        size_t n = A.row;
+        Numcpp<T> L(n, n, 0.0);
+
+        for (size_t i = 0; i < n; i++)
+        {
+            for (size_t j = 0; j <= i; j++)
+            {
+                T sum = 0.0;
+
+                if (j == i)
+                {
+                    // 对角线元素
+                    for (size_t k = 0; k < j; k++)
+                    {
+                        sum += L[j][k] * L[j][k];
+                    }
+                    L[j][j] = std::sqrt(A[j][j] - sum);
+                }
+                else
+                {
+                    // 非对角线元素
+                    for (size_t k = 0; k < j; k++)
+                    {
+                        sum += L[i][k] * L[j][k];
+                    }
+                    L[i][j] = (A[i][j] - sum) / L[j][j];
+                }
+            }
+        }
+
+        return L;
+    }
+
+    /**
+     * 验证生成的高斯矩阵的统计特性
+     */
+    template <typename T>
+    void validate_gaussian(const Numcpp<T> &matrix,
+                           T expected_mean = 0.0,
+                           T expected_stddev = 1.0,
+                           T tolerance = 0.1)
+    {
+
+        T sum = 0.0;
+        T sum_sq = 0.0;
+        size_t total_elements = matrix.row * matrix.col;
+
+        for (size_t i = 0; i < matrix.row; i++)
+        {
+            for (size_t j = 0; j < matrix.col; j++)
+            {
+                sum += matrix[i][j];
+                sum_sq += matrix[i][j] * matrix[i][j];
+            }
+        }
+
+        T mean = sum / total_elements;
+        T variance = (sum_sq / total_elements) - (mean * mean);
+        T stddev = std::sqrt(variance);
+
+        std::cout << "高斯矩阵统计验证:\n";
+        std::cout << "样本数量: " << total_elements << "\n";
+        std::cout << "计算均值: " << mean << " (期望: " << expected_mean << ")\n";
+        std::cout << "计算标准差: " << stddev << " (期望: " << expected_stddev << ")\n";
+
+        if (std::abs(mean - expected_mean) < tolerance &&
+            std::abs(stddev - expected_stddev) < tolerance)
+        {
+            std::cout << "✓ 统计特性在容差范围内\n";
+        }
+        else
+        {
+            std::cout << "✗ 统计特性超出容差范围\n";
+        }
+        std::cout << std::endl;
+    }
+
+    /**
+     * 生成混合高斯分布矩阵
+     * 用于创建具有多个高斯分量混合的数据
+     */
+    template <typename T>
+    Numcpp<T> gaussian_mixture(size_t rows, size_t cols,
+                               const std::vector<GaussianConfig> &components,
+                               const std::vector<T> &weights = {})
+    {
+
+        if (components.empty())
+        {
+            throw std::invalid_argument("At least one Gaussian component required");
+        }
+
+        // 如果没有提供权重，使用均匀权重
+        std::vector<T> actual_weights = weights;
+        if (actual_weights.empty())
+        {
+            actual_weights = std::vector<T>(components.size(), 1.0 / components.size());
+        }
+
+        if (components.size() != actual_weights.size())
+        {
+            throw std::invalid_argument("Number of components and weights must match");
+        }
+
+        Numcpp<T> result(rows, cols);
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::discrete_distribution<> component_selector(actual_weights.begin(), actual_weights.end());
+
+        // 为每个分量创建生成器
+        std::vector<StandardGaussianGenerator<T>> generators;
+        for (const auto &config : components)
+        {
+            generators.emplace_back(config.seed);
+        }
+
+        for (size_t i = 0; i < rows; i++)
+        {
+            for (size_t j = 0; j < cols; j++)
+            {
+                int component = component_selector(gen);
+                const auto &config = components[component];
+                result[i][j] = generators[component].generate(config.mean, config.stddev);
+            }
+        }
+
+        return result;
+    }
+
+} // namespace np
 #endif //!__NUMCPP__H__

@@ -329,6 +329,42 @@ if (sqrt(thread_num) * sqrt(thread_num) > std::thread::hardware_concurrency() ||
 */
 ```
 
+### 矩阵有关的实用工具
+
+```c++
+// 创建矩阵
+np::Numcpp<int> mat(4, 5);
+mat << 1, 1, 0, 1, 0,
+       1, 1, 1, 1, 1,
+       1, 1, 1, 1, 1,
+       1, 0, 1, 1, 0;
+
+// 查找最大矩形
+np::Rectangle rect = np::findMaximalRectangle(mat);
+std::cout << "最大矩形: " << rect.area << " 面积" << std::endl;
+
+// 基本用法
+auto mat = np::randn<double>(100, 100);  // 100x100标准高斯矩阵
+
+// 自定义参数
+np::GaussianConfig config;
+config.mean = 5.0;
+config.stddev = 2.0;
+config.seed = 12345;
+auto custom_mat = np::randn<double>(50, 50, config);
+
+// 多线程生成大矩阵
+auto big_mat = np::randn_parallel<double>(1000, 1000, config, 8);
+
+// 多变量高斯
+np::Numcpp<double> cov(2, 2);
+cov << 1.0, 0.8, 0.8, 1.0;
+auto multi_mat = np::multivariate_randn<double>(1000, cov);
+
+```
+
+
+
 # 对Nvidia GPU的CUDA加速支持
 
 提供所有基础操作的CUDA加速，同时基于性能考量，内存自动同步默认为关，在**完成所有运算后**应**手动同步数据**回主机。

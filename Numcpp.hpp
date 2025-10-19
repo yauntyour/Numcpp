@@ -11,6 +11,8 @@
 #include <complex>
 #include <fstream>
 #include <vector>
+#include <stack>
+#include <random>
 #include <algorithm>
 #define NP_PI 3.14159265358979
 
@@ -179,6 +181,153 @@ namespace cuda_op
             std::cerr << __func__ << "()::" << "CUDA error: " << cudaGetErrorString(err) << std::endl;
         }
     }
+    // 矩阵转置CUDA核函数
+    template <typename T>
+    __global__ void kernel_transpose(T **mat, T **transposed, size_t rows, size_t cols)
+    {
+        int row = blockIdx.y * blockDim.y + threadIdx.y;
+        int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+        if (row < rows && col < cols)
+        {
+            transposed[col][row] = mat[row][col];
+        }
+    }
+
+    // 计算A^T * A
+    template <typename T>
+    void compute_ATA(T **A, T **ATA, size_t m, size_t n)
+    {
+        // 分配转置矩阵内存
+        T **A_T;
+        cudaMalloc((void **)&A_T, n * sizeof(T *));
+        for (size_t i = 0; i < n; i++)
+        {
+            cudaMalloc((void **)&A_T[i], m * sizeof(T));
+        }
+
+        // 执行转置
+        dim3 block(16, 16);
+        dim3 grid((m + block.x - 1) / block.x, (n + block.y - 1) / block.y);
+        kernel_transpose<T><<<grid, block>>>(A, A_T, m, n);
+        cudaDeviceSynchronize();
+
+        // 计算A^T * A
+        cuda_op::gemm<T>(A_T, n, m, A, n, ATA, 1.0, 0.0);
+
+        // 释放临时内存
+        for (size_t i = 0; i < n; i++)
+        {
+            cudaFree(A_T[i]);
+        }
+        cudaFree(A_T);
+    }
+
+    // 幂法求最大特征值和特征向量
+    template <typename T>
+    T power_method(T **mat, T **vec, size_t size, int max_iter = 1000, T tol = 1e-6)
+    {
+        T *temp = new T[size];
+        T lambda_old = 0.0, lambda_new = 0.0;
+
+        // 初始化特征向量
+        for (size_t i = 0; i < size; i++)
+        {
+            vec[i][0] = 1.0 / sqrt((T)size);
+        }
+
+        for (int iter = 0; iter < max_iter; iter++)
+        {
+            // 矩阵-向量乘法
+            for (size_t i = 0; i < size; i++)
+            {
+                temp[i] = 0.0;
+                for (size_t j = 0; j < size; j++)
+                {
+                    temp[i] += mat[i][j] * vec[j][0];
+                }
+            }
+
+            // 计算新的特征值（Rayleigh商）
+            lambda_new = 0.0;
+            T vec_norm = 0.0;
+            for (size_t i = 0; i < size; i++)
+            {
+                lambda_new += vec[i][0] * temp[i];
+                vec_norm += temp[i] * temp[i];
+            }
+            vec_norm = sqrt(vec_norm);
+
+            // 归一化特征向量
+            for (size_t i = 0; i < size; i++)
+            {
+                vec[i][0] = temp[i] / vec_norm;
+            }
+
+            // 检查收敛
+            if (fabs(lambda_new - lambda_old) < tol)
+            {
+                break;
+            }
+            lambda_old = lambda_new;
+        }
+
+        delete[] temp;
+        return sqrt(lambda_new); // 奇异值是特征值的平方根
+    }
+
+    // SVD主函数
+    template <typename T>
+    void cuda_svd(T **A, T **U, T **S, T **V, size_t m, size_t n)
+    {
+        cudaError_t err;
+        T **ATA = (T **)malloc(n * sizeof(T *));
+        for (size_t i = 0; i < n; i++)
+        {
+            err = cudaMalloc((void **)&ATA[i], n * sizeof(T));
+            if (err != cudaSuccess)
+            {
+                std::cerr << "CUDA malloc error in cuda_svd: " << cudaGetErrorString(err) << std::endl;
+                return;
+            }
+        }
+
+        // 计算 A^T * A
+        compute_ATA<T>(A, ATA, m, n);
+
+        // 只计算最大奇异值（演示用）
+        T **vec = (T **)malloc(n * sizeof(T *));
+        for (size_t i = 0; i < n; i++)
+        {
+            err = cudaFree(ATA[i]);
+            if (err != cudaSuccess)
+            {
+                std::cerr << "CUDA free error: " << cudaGetErrorString(err) << std::endl;
+            }
+        }
+
+        // 计算最大特征值
+        T max_singular = power_method<T>(ATA, vec, n);
+
+        // 设置S矩阵（只设置最大的）
+        for (size_t i = 0; i < std::min(m, n); i++)
+        {
+            if (i == 0)
+                S[i][i] = max_singular;
+            else
+                S[i][i] = (T)0;
+        }
+
+        // 清理内存
+        for (size_t i = 0; i < n; i++)
+        {
+            cudaFree(ATA[i]);
+            cudaFree(vec[i]);
+        }
+        free(ATA);
+        free(vec);
+    }
+
 } // namespace cuda_iterator
 #endif
 namespace units
@@ -699,12 +848,13 @@ namespace np
         Numcpp(const size_t _row, const size_t _col, dataType value);
         Numcpp(const Numcpp<dataType> &other);
         Numcpp(dataType *mat, const size_t _row, const size_t _col);
+        Numcpp(dataType **mat, const size_t _row, const size_t _col);
         Numcpp(char *filename);
 // operators
 #if CUDA_CHECK
         void to(const int device)
         {
-            if (device == DEVICE_CUDA && mem_stat == false)
+            if (device == DEVICE_CUDA && (mem_stat == false || mem_synced == false))
             {
                 if (device_data == nullptr)
                 {
@@ -1922,6 +2072,36 @@ namespace np
         }
     }
     template <typename T>
+    inline Numcpp<T>::Numcpp(T **mat, const size_t _row, const size_t _col)
+    {
+        if (_row == 0 || _col == 0)
+        {
+            throw "Invalid creation";
+        }
+        else
+        {
+            row = _row;
+            col = _col;
+            matrix = new T *[_row];
+            if (this->optimization == false)
+            {
+                for (size_t i = 0; i < _row; i++)
+                {
+                    matrix[i] = new T[_col];
+                    for (size_t j = 0; j < _col; j++)
+                    {
+                        matrix[i][j] = mat[i][j];
+                    }
+                }
+            }
+            else
+            {
+                units::Copy_thread_worker<T>(matrix, _row, _col, mat, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
+                                             { a[i][j] = b[i][j]; });
+            }
+        }
+    }
+    template <typename T>
     Numcpp<T>::Numcpp(const Numcpp<T> &other)
     {
         if (other.row == 0 || other.col == 0)
@@ -2351,11 +2531,23 @@ namespace np
     };
 #if CUDA_CHECK
     template <typename T>
-    void cuda_svd(const Numcpp<T> &A, Numcpp<T> &U, Numcpp<T> &S, Numcpp<T> &Vt)
+    void cuda_svd(Numcpp<T> &A, Numcpp<T> &U, Numcpp<T> &S, Numcpp<T> &Vt)
     {
         // 仅支持实数类型
         static_assert(std::is_same<T, float>::value || std::is_same<T, double>::value, "cuda_svd only supports float and double");
-        // code
+
+        U = Numcpp<T>(A.row, A.row, 0);
+        S = Numcpp<T>(A.row, A.col, 0);
+        Vt = Numcpp<T>(A.col, A.col, 0);
+
+        U.to(DEVICE_CUDA);
+        S.to(DEVICE_CUDA);
+        Vt.to(DEVICE_CUDA);
+        A.to(DEVICE_CUDA);
+        cuda_op::cuda_svd<T>(A.device_data, U.device_data, S.device_data, Vt.device_data, A.row, A.col);
+        U.to(DEVICE_LOCAL);
+        S.to(DEVICE_LOCAL);
+        Vt.to(DEVICE_LOCAL);
     }
 #endif
 #define MATtoNumcpp(mat_name, Numcpp, row, col) \

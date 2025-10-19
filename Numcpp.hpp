@@ -11,7 +11,6 @@
 #include <complex>
 #include <fstream>
 #include <vector>
-#include <stack>
 #include <random>
 #include <algorithm>
 #define NP_PI 3.14159265358979

@@ -139,6 +139,24 @@ int main(int argc, char const *argv[])
                   << std::endl;
         std::cout << "<func>:" << (n<sinxy> NULL)
                   << std::endl;
+
+        // 生成高斯矩阵基本用法
+        auto gmat = np::randn<double>(100, 100); // 100x100标准高斯矩阵
+
+        // 自定义参数
+        np::GaussianConfig config;
+        config.mean = 5.0;
+        config.stddev = 2.0;
+        config.seed = 12345;
+        auto custom_mat = np::randn<double>(50, 50, config);
+
+        // 多线程生成大矩阵
+        auto big_mat = np::randn_parallel<double>(1000, 1000, config, 8);
+
+        // 多变量高斯
+        np::Numcpp<double> cov(2, 2);
+        cov << 1.0, 0.8, 0.8, 1.0;
+        auto multi_mat = np::multivariate_randn<double>(1000, cov);
     }
     catch (const std::exception &e)
     {

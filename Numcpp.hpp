@@ -831,6 +831,7 @@ namespace np
     private:
         bool optimization = is_optimized;
         size_t maxprocs = MAX_thread;
+        bool is_destroy = false;
 #if CUDA_CHECK
         bool mem_stat = false;
         bool mem_synced = false;
@@ -850,6 +851,15 @@ namespace np
         Numcpp(dataType *mat, const size_t _row, const size_t _col);
         Numcpp(dataType **mat, const size_t _row, const size_t _col);
         Numcpp(char *filename);
+
+        void ensure() const
+        {
+            if (matrix == nullptr && is_destroy == true)
+            {
+                std::runtime_error("matrix is a nullptr && is_destroy = true");
+            }
+        }
+
 // operators
 #if CUDA_CHECK
         void to(const int device)
@@ -929,6 +939,7 @@ namespace np
 
         void operator=(const Numcpp<dataType> &other)
         {
+            ensure();
             if (other.row != this->row || other.col != this->col)
             {
                 if (matrix == nullptr)
@@ -989,6 +1000,7 @@ namespace np
         }
         void operator+=(const Numcpp<dataType> &other)
         {
+            ensure();
             if (other.row != this->row || other.col != this->col)
             {
                 throw std::invalid_argument("Invalid Matrix");
@@ -1036,6 +1048,7 @@ namespace np
         }
         Numcpp<dataType> operator+(const Numcpp<dataType> &other) const
         {
+            ensure();
             if (other.row != this->row || other.col != this->col)
             {
                 throw std::invalid_argument("Invalid Matrix");
@@ -1093,6 +1106,7 @@ namespace np
         }
         void operator-=(const Numcpp<dataType> &other)
         {
+            ensure();
             if (other.row != this->row || other.col != this->col)
             {
                 throw std::invalid_argument("Invalid Matrix");
@@ -1140,6 +1154,7 @@ namespace np
         }
         Numcpp<dataType> operator-(const Numcpp<dataType> &other) const
         {
+            ensure();
             if (other.row != this->row || other.col != this->col)
             {
                 throw std::invalid_argument("Invalid Matrix");
@@ -1197,6 +1212,7 @@ namespace np
         }
         Numcpp<dataType> operator+(dataType n) const
         {
+            ensure();
             Numcpp<dataType> result(this->row, this->col, n);
             if (this->optimization == false)
             {
@@ -1246,6 +1262,7 @@ namespace np
         }
         void operator+=(dataType n)
         {
+            ensure();
             if (this->optimization == false)
             {
                 for (size_t i = 0; i < this->row; i++)
@@ -1285,6 +1302,7 @@ namespace np
         }
         Numcpp<dataType> operator-(dataType n) const
         {
+            ensure();
             Numcpp<dataType> result(this->matrix, this->row, this->col);
             if (this->optimization == false)
             {
@@ -1334,6 +1352,7 @@ namespace np
         }
         void operator-=(dataType n)
         {
+            ensure();
             if (this->optimization == false)
             {
                 for (size_t i = 0; i < this->row; i++)
@@ -1374,6 +1393,7 @@ namespace np
 
         Numcpp<dataType> operator*(dataType n) const
         {
+            ensure();
             Numcpp<dataType> result(this->row, this->col, n);
             if (this->optimization == false)
             {
@@ -1423,6 +1443,7 @@ namespace np
         }
         void operator*=(dataType n)
         {
+            ensure();
             if (this->optimization == false)
             {
                 for (size_t i = 0; i < this->row; i++)
@@ -1462,6 +1483,7 @@ namespace np
         }
         Numcpp<dataType> operator/(dataType n) const
         {
+            ensure();
             assert(n != 0);
             Numcpp<dataType> result(this->row, this->col);
             if (this->optimization == false)
@@ -1512,6 +1534,7 @@ namespace np
         }
         void operator/=(dataType n)
         {
+            ensure();
             assert(n != 0);
             if (this->optimization == false)
             {
@@ -1554,6 +1577,7 @@ namespace np
         /*the col of first matrix is the same as the row of second matrix*/
         Numcpp<dataType> operator*(const Numcpp<dataType> &other) const
         {
+            ensure();
             if (this->col != other.row)
             {
                 throw std::invalid_argument("Invalid Matrix");
@@ -1598,14 +1622,17 @@ namespace np
         /*index for each*/
         dataType *operator[](const size_t index) const
         {
+            ensure();
             return index < this->row ? this->matrix[index] : NULL;
         }
         Numcpp<dataType> srow(const size_t index) const
         {
+            ensure();
             return index < this->row ? Numcpp<dataType>(this->matrix[index], 1, this->col) : Numcpp<dataType>();
         }
         Numcpp<dataType> scol(const size_t index) const
         {
+            ensure();
             if (index < this->col)
             {
                 Numcpp<dataType> result(this->row, 1);
@@ -1653,6 +1680,7 @@ namespace np
         // 正向/反向FFT（返回新矩阵）
         Numcpp<dataType> fft(int inv) const
         {
+            ensure();
             static_assert(
                 std::is_same_v<dataType, std::complex<float>> ||
                     std::is_same_v<dataType, std::complex<double>>,
@@ -1681,6 +1709,7 @@ namespace np
         // 自体FFT
         void ffted(int inv)
         {
+            ensure();
             static_assert(
                 std::is_same_v<dataType, std::complex<float>> ||
                     std::is_same_v<dataType, std::complex<double>>,
@@ -1706,6 +1735,7 @@ namespace np
 #endif
         dataType sum()
         {
+            ensure();
             dataType sum_value = 0;
             if (this->optimization == false)
             {
@@ -1727,6 +1757,7 @@ namespace np
         }
         void save(const char *path)
         {
+            ensure();
             FILE *fp = fopen(path, "ab");
             if (fp == NULL)
             {
@@ -1745,6 +1776,7 @@ namespace np
         }
         friend std::ostream &operator<<(std::ostream &stream, const Numcpp<dataType> &m)
         {
+            m.ensure();
             stream << '(' << m.row << ',' << m.col << ')' << "[\n";
             for (size_t i = 0; i < m.row; ++i)
             {
@@ -1793,6 +1825,7 @@ namespace np
         };
         CommaInitializer operator<<(dataType value)
         {
+            ensure();
             if (row * col == 0)
                 throw std::out_of_range("Matrix is empty");
             matrix[0][0] = value;
@@ -1807,6 +1840,7 @@ namespace np
 
         void zero_approximation()
         {
+            ensure();
             if (this->optimization == false)
             {
                 for (size_t i = 0; i < this->row; i++)
@@ -1829,6 +1863,7 @@ namespace np
         // 检查矩阵是否对称
         bool is_symmetric(double tolerance = 1e-6) const
         {
+            ensure();
             if (row != col)
                 return false;
             for (size_t i = 0; i < row; i++)
@@ -1847,6 +1882,7 @@ namespace np
         // 设置矩阵为单位矩阵
         void set_identity()
         {
+            ensure();
             for (size_t i = 0; i < row; i++)
             {
                 for (size_t j = 0; j < col; j++)
@@ -1858,6 +1894,7 @@ namespace np
         // 计算特征值和特征向量
         std::vector<Numcpp<dataType>> eig(int max_iter = 1000, double tolerance = 1e-6) const
         {
+            ensure();
             if (!is_symmetric(tolerance))
             {
                 throw std::invalid_argument("eig only supported for symmetric matrices");
@@ -1923,6 +1960,7 @@ namespace np
          */
         Numcpp(const cv::Mat &mat, bool copy_data = true)
         {
+            ensure();
             if (mat.empty())
             {
                 throw std::invalid_argument("OpenCV matrix is empty");
@@ -1974,6 +2012,7 @@ namespace np
          */
         cv::Mat toMat(int mat_type = -1) const
         {
+            ensure();
             if (row == 0 || col == 0)
             {
                 return cv::Mat();
@@ -2062,6 +2101,7 @@ namespace np
          */
         Numcpp<dataType> &fromMat(const cv::Mat &mat)
         {
+            ensure();
             if (mat.empty())
             {
                 throw std::invalid_argument("OpenCV matrix is empty");
@@ -2091,6 +2131,7 @@ namespace np
          */
         void initializeFromCV(const cv::Mat &mat, bool copy_data)
         {
+            ensure();
             if (copy_data)
             {
                 // 深拷贝：分配新内存并复制数据
@@ -2368,24 +2409,25 @@ namespace np
     template <typename T>
     Numcpp<T>::~Numcpp()
     {
+        if (matrix != nullptr && is_destroy != true)
+        {
 #if CUDA_CHECK
-        cuda_free();
-        for (size_t i = 0; i < this->row; i++)
-        {
-            delete matrix[i];
-        }
-        delete[] matrix;
-#else
-        for (size_t i = 0; i < this->row; i++)
-        {
-            delete matrix[i];
-        }
-        delete[] matrix;
+            cuda_free();
 #endif
+            for (size_t i = 0; i < this->row; i++)
+            {
+                delete matrix[i];
+                matrix[i] = nullptr;
+            }
+            delete[] matrix;
+            matrix = nullptr;
+            is_destroy = false;
+        }
     }
     template <typename T>
     Numcpp<T> Numcpp<T>::transpose() const
     {
+        this->ensure();
         Numcpp<T> result(this->col, this->row);
         if (this->optimization == false)
         {
@@ -2407,6 +2449,7 @@ namespace np
     template <typename T>
     void Numcpp<T>::transposed()
     {
+        this->ensure();
         size_t x = this->col;
         size_t y = this->row;
         T **temp = new T *[x];
@@ -2445,6 +2488,7 @@ namespace np
     template <typename T>
     void Numcpp<T>::Hadamard_self(const Numcpp<T> &other)
     {
+        this->ensure();
         if (other.row != this->row || other.col != this->col)
         {
             throw std::invalid_argument("Invalid Matrix");
@@ -2493,6 +2537,7 @@ namespace np
     template <typename T>
     Numcpp<T> Numcpp<T>::Hadamard(const Numcpp<T> &other) const
     {
+        this->ensure();
         if (other.row != this->row || other.col != this->col)
         {
             throw std::invalid_argument("Invalid Matrix");
@@ -2565,6 +2610,7 @@ namespace np
     template <typename T>
     T Numcpp<T>::determinant() const
     {
+        this->ensure();
         if (row != col)
         {
             throw std::invalid_argument("Matrix must be square to compute determinant.");
@@ -2575,6 +2621,7 @@ namespace np
     template <typename T>
     Numcpp<T> Numcpp<T>::inverse() const
     {
+        this->ensure();
         if (row != col)
         {
             throw std::invalid_argument("Standard inverse is only defined for square matrices. Use pseudoinverse() for non-square matrices.");
@@ -2639,6 +2686,7 @@ namespace np
     template <typename T>
     Numcpp<T> Numcpp<T>::pseudoinverse() const
     {
+        this->ensure();
         if (row == 0 || col == 0)
         {
             throw std::invalid_argument("Matrix is empty");
@@ -2688,6 +2736,7 @@ namespace np
     template <typename T>
     void Numcpp<T>::svd(Numcpp<T> &U, Numcpp<T> &S, Numcpp<T> &V) const
     {
+        this->ensure();
         Numcpp<T> AT(*this);
         AT.transposed();
         Numcpp<T> ATA = (*this) * AT;
@@ -2717,6 +2766,7 @@ namespace np
     template <typename T>
     std::vector<Numcpp<T>> Numcpp<T>::svd() const
     {
+        this->ensure();
         Numcpp<T> AT(*this);
         AT.transposed();
         Numcpp<T> ATA = (*this) * AT;

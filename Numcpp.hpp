@@ -3218,5 +3218,43 @@ namespace np
         return result;
     }
 
+    // LQR solver
+    template <typename T>
+    std::pair<np::Numcpp<T>, np::Numcpp<T>> solve_lqr(
+        const np::Numcpp<T> &A, const np::Numcpp<T> &B,
+        const np::Numcpp<T> &Q, const np::Numcpp<T> &R,
+        int max_iter = 1000, T tolerance = 1e-6)
+    {
+        size_t n = A.row;
+        size_t m = B.col;
+
+        // 求解Riccati方程得到P
+        np::Numcpp<T> P = Q; // 初始猜测
+
+        T diff = 0.0;
+        for (int iter = 0; diff < tolerance; iter++)
+        {
+            np::Numcpp<T> P_next = A.transpose() * P * A -
+                                   A.transpose() * P * B *
+                                       (B.transpose() * P * B + R).inverse() *
+                                       B.transpose() * P * A +
+                                   Q;
+            for (size_t i = 0; i < n; i++)
+            {
+                for (size_t j = 0; j < n; j++)
+                {
+                    diff += std::abs(P_next[i][j] - P[i][j]);
+                }
+            }
+            P = P_next;
+        }
+
+        // 计算反馈增益K
+        np::Numcpp<T> BT = B.transpose();
+        np::Numcpp<T> K = (R + BT * P * B).inverse() * BT * P * A;
+
+        return {K, P};
+    }
+
 } // namespace np
 #endif //!__NUMCPP__H__

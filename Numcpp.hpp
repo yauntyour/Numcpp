@@ -9,11 +9,24 @@
 #include <functional>
 #include <type_traits>
 #include <complex>
+#include <type_traits>
 #include <fstream>
 #include <vector>
 #include <random>
 #include <algorithm>
 #define NP_PI 3.14159265358979
+
+// 复数的特殊判断
+template <typename T>
+struct is_complex : std::false_type
+{
+};
+template <typename T>
+struct is_complex<std::complex<T>> : std::true_type
+{
+};
+template <typename T>
+constexpr bool is_complex_v = is_complex<T>::value;
 
 #define MATtoPtr2D(T, value_name, change_name, row, col) \
     T *change_name[col];                                 \
@@ -823,6 +836,13 @@ namespace units
 
 namespace np
 {
+    enum NormType
+    {
+        L1,
+        L2,
+        INF
+    };
+
     static bool is_optimized = false;
     static size_t MAX_thread = 1;
     template <typename dataType>
@@ -1681,59 +1701,94 @@ namespace np
         Numcpp<dataType> fft(int inv) const
         {
             ensure();
-            static_assert(
-                std::is_same_v<dataType, std::complex<float>> ||
-                    std::is_same_v<dataType, std::complex<double>>,
-                "FFT requires complex types");
-
-            Numcpp<dataType> result(this->row, this->col);
-            using ValueType = typename dataType::value_type; // 提取底层数值类型
-
-            for (size_t i = 0; i < this->row; i++)
+            if (is_complex_v<dataType>)
             {
-                units::fft<ValueType>(
-                    &(this->matrix[i]),
-                    this->col,
-                    &(result.matrix[i]),
-                    inv);
-            }
+                Numcpp<dataType> result(this->row, this->col);
+                using ValueType = typename dataType::value_type; // 提取底层数值类型
 
-            // 逆变换归一化
-            if (inv < 0)
-            {
-                result *= dataType(1.0 / this->col, 0);
+                for (size_t i = 0; i < this->row; i++)
+                {
+                    units::fft<ValueType>(
+                        &(this->matrix[i]),
+                        this->col,
+                        &(result.matrix[i]),
+                        inv);
+                }
+
+                // 逆变换归一化
+                if (inv < 0)
+                {
+                    result *= dataType(1.0 / this->col, 0);
+                }
+                return result;
             }
-            return result;
+            else
+            {
+                // 不是复数转为复数
+                Numcpp<std::complex<dataType>> temp(row, col);
+                if (this->optimization == false)
+                {
+                    for (size_t i = 0; i < row; i++)
+                    {
+                        for (size_t j = 0; j < col; j++)
+                        {
+                            temp.matrix[i][j] = std::complex<dataType>(matrix[i][j]);
+                        }
+                    }
+                }
+                else
+                {
+                    units::Copy_thread_worker<dataType>(temp.matrix, this->row, this->col, matrix, this->maxprocs, [](dataType **a, dataType **b, size_t i, size_t j)
+                                                        { a[i][j] = std::complex<dataType>(b[i][j]); });
+                }
+                for (size_t i = 0; i < this->row; i++)
+                {
+                    // 原地计算（输入输出指向相同内存）
+                    units::fft<dataType>(
+                        &(temp.matrix[i]),
+                        this->col,
+                        &(temp.matrix[i]),
+                        inv);
+                }
+
+                // 逆变换归一化
+                if (inv < 0)
+                {
+                    temp *= std::complex<dataType>(1.0 / this->col, 0);
+                }
+            }
         }
 
         // 自体FFT
         void ffted(int inv)
         {
             ensure();
-            static_assert(
-                std::is_same_v<dataType, std::complex<float>> ||
-                    std::is_same_v<dataType, std::complex<double>>,
-                "FFT requires complex types");
-
-            using ValueType = typename dataType::value_type;
-            for (size_t i = 0; i < this->row; i++)
+            if (is_complex_v<dataType>)
             {
-                // 原地计算（输入输出指向相同内存）
-                units::fft<ValueType>(
-                    &(this->matrix[i]),
-                    this->col,
-                    &(this->matrix[i]),
-                    inv);
+                using ValueType = typename dataType::value_type;
+                for (size_t i = 0; i < this->row; i++)
+                {
+                    // 原地计算（输入输出指向相同内存）
+                    units::fft<ValueType>(
+                        &(this->matrix[i]),
+                        this->col,
+                        &(this->matrix[i]),
+                        inv);
+                }
+
+                // 逆变换归一化
+                if (inv < 0)
+                {
+                    *this *= dataType(1.0 / this->col, 0);
+                }
             }
-
-            // 逆变换归一化
-            if (inv < 0)
+            else
             {
-                *this *= dataType(1.0 / this->col, 0);
+                std::invalid_argument("FFT in self must require the complex type");
             }
         }
 #endif
-        dataType sum()
+        dataType sum() const
         {
             ensure();
             dataType sum_value = 0;
@@ -2170,6 +2225,156 @@ namespace np
             }
         }
 #endif // NUMCPP_OPENCV_SUPPORT
+        bool is_vector() const
+        {
+            // 向量定义为行数为1或列数为1的矩阵
+            return (row == 1 || col == 1);
+        }
+        size_t size() const
+        {
+            // 向量元素总数
+            return row * col;
+        }
+
+        /**
+         * 计算矩阵/向量的范数
+         * @param type 范数类型（默认L2）
+         * @return 范数计算结果
+         */
+        dataType norm(NormType type = L2) const
+        {
+            ensure();
+            dataType result = 0;
+
+            switch (type)
+            {
+            case L1:
+                // L1范数：元素绝对值之和（向量）或列绝对值之和的最大值（矩阵）
+                if (is_vector()) // 假设已实现判断是否为向量的方法
+                {
+                    result += sum();
+                }
+                else
+                {
+                    dataType max_col_sum = 0;
+                    for (size_t j = 0; j < col; ++j)
+                    {
+                        dataType col_sum = 0;
+                        for (size_t i = 0; i < row; ++i)
+                        {
+                            col_sum += std::fabs(matrix[i][j]);
+                        }
+                        max_col_sum = std::max(max_col_sum, col_sum);
+                    }
+                    result = max_col_sum;
+                }
+                break;
+
+            case L2:
+                // L2范数：元素平方和的平方根（向量）或F-范数（矩阵）
+                if (is_vector())
+                {
+                    dataType sum_sq = ((*this) * (this->transpose())).sum();
+                    result = std::sqrt(sum_sq);
+                }
+                else
+                {
+                    dataType sum_sq = 0;
+                    for (size_t i = 0; i < row; ++i)
+                    {
+                        for (size_t j = 0; j < col; ++j)
+                        {
+                            sum_sq += matrix[i][j] * matrix[i][j];
+                        }
+                    }
+                    result = std::sqrt(sum_sq);
+                }
+                break;
+
+            case INF:
+                // 无穷范数：元素绝对值的最大值（向量）或行绝对值之和的最大值（矩阵）
+                if (is_vector())
+                {
+                    if (row == 1)
+                    {
+                        for (size_t i = 0; i < col; i++)
+                        {
+                            if (matrix[0][i] > result)
+                            {
+                                result = matrix[0][i];
+                            }
+                        }
+                    }
+                    else
+                    {
+                        for (size_t i = 0; i < row; i++)
+                        {
+                            if (matrix[i][0] > result)
+                            {
+                                result = matrix[i][0];
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    auto temp = ((*this) * Numcpp<dataType>(col, 1))<mklamb(dataType, {
+                        return std::abs(x);
+                    })>
+                        NULL;
+                    for (size_t i = 0; i < row; i++)
+                    {
+                        if (temp[i][0] > result)
+                        {
+                            result = temp[i][0];
+                        }
+                    }
+                }
+                break;
+
+            default:
+                throw std::invalid_argument("Unsupported norm type");
+            }
+
+            return result;
+        }
+        dataType dot(const Numcpp<dataType> &other) const
+        {
+            ensure();
+            if (!(this->is_vector() && other.is_vector()))
+            {
+                throw std::invalid_argument("Dot require two vectors");
+            }
+            if (this->row * this->col != other.row * other.col)
+            {
+                throw std::invalid_argument("Two vectors must in a same dim");
+            }
+            if (row == other.row)
+            {
+                dataType result = 0;
+                if (row == 1)
+                {
+                    for (size_t i = 0; i < col; i++)
+                    {
+                        result += other.matrix[0][i] * matrix[0][i];
+                    }
+                    return result;
+                }
+                else
+                {
+                    for (size_t i = 0; i < row; i++)
+                    {
+                        result += other.matrix[i][0] * matrix[i][0];
+                    }
+                    return result;
+                }
+            }
+            else
+            {
+                auto temp = (*this) * other;
+                return temp[0][0];
+            }
+        }
     };
     // matrix special operate
     template <typename T>

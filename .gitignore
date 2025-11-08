@@ -16,7 +16,6 @@ app.exe
 app.exp
 app.lib
 mat
-load.exe
-load_test.cpp
-load_test.exe
+test.cpp
+test.exe
 pytest.ipynb

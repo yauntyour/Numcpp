@@ -278,7 +278,7 @@ namespace cuda_op
             }
 
             // 检查收敛
-            if (fabs(lambda_new - lambda_old) < tol)
+            if (std::abs(lambda_new - lambda_old) < tol)
             {
                 break;
             }
@@ -845,18 +845,36 @@ namespace np
 
     static bool is_optimized = false;
     static size_t MAX_thread = 1;
+
+    template <typename dataType>
+    class Numcpp;
+
+    // tools define with Numcpp need
+
+    // Numcpp<T> T == Numcpp check
+    template <typename T>
+    struct is_numcpp : std::false_type
+    {
+    };
+    template <typename T>
+    struct is_numcpp<Numcpp<T>> : std::true_type
+    {
+    };
+    template <typename T>
+    constexpr bool is_numcpp_v = is_numcpp<T>::value;
     template <typename dataType>
     class Numcpp
     {
     private:
         bool optimization = is_optimized;
         size_t maxprocs = MAX_thread;
-        bool is_destroy = false;
+        bool is_destroy = true;
 #if CUDA_CHECK
         bool mem_stat = false;
         bool mem_synced = false;
 #endif
     public:
+        using value_type = dataType;
         dataType **matrix = nullptr;
         size_t row = 0, col = 0;
 #if CUDA_CHECK
@@ -876,7 +894,7 @@ namespace np
         {
             if (matrix == nullptr && is_destroy == true)
             {
-                std::runtime_error("matrix is a nullptr && is_destroy = true");
+                throw std::runtime_error("matrix is a nullptr && is_destroy = true");
             }
         }
 
@@ -959,7 +977,6 @@ namespace np
 
         void operator=(const Numcpp<dataType> &other)
         {
-            ensure();
             if (other.row != this->row || other.col != this->col)
             {
                 if (matrix == nullptr)
@@ -1075,7 +1092,16 @@ namespace np
             }
             else
             {
-                Numcpp<dataType> result(this->row, this->col);
+                Numcpp<dataType> result;
+                if (is_numcpp_v<dataType>)
+                {
+                    result = Numcpp<dataType>(this->row, this->col, this->matrix[0][0]);
+                }
+                else
+                {
+                    result = Numcpp<dataType>(this->row, this->col);
+                }
+
                 if (this->optimization == false)
                 {
                     for (size_t i = 0; i < this->row; i++)
@@ -1181,7 +1207,16 @@ namespace np
             }
             else
             {
-                Numcpp<dataType> result(this->row, this->col);
+                Numcpp<dataType> result;
+                if (is_numcpp_v<dataType>)
+                {
+                    result = Numcpp<dataType>(this->row, this->col, this->matrix[0][0]);
+                }
+                else
+                {
+                    result = Numcpp<dataType>(this->row, this->col);
+                }
+
                 if (this->optimization == false)
                 {
                     for (size_t i = 0; i < this->row; i++)
@@ -1604,7 +1639,18 @@ namespace np
             }
             else
             {
-                Numcpp<dataType> result(this->row, other.col, 0);
+                Numcpp<dataType> result;
+                if constexpr (is_numcpp_v<dataType>)
+                {
+                    size_t n = ((Numcpp *)this->matrix[0])->row;
+                    size_t m = ((Numcpp *)other.matrix[0])->col;
+                    using ValueType = typename dataType::value_type;
+                    result = Numcpp<dataType>(this->row, other.col, Numcpp<ValueType>(n, m, 0));
+                }
+                else
+                {
+                    result = Numcpp<dataType>(this->row, other.col, 0);
+                }
                 if (this->optimization == true)
                 {
                     units::mm_auto(this->matrix, other.matrix, result.matrix, this->row, other.row, this->col, other.col, true);
@@ -1791,7 +1837,16 @@ namespace np
         dataType sum() const
         {
             ensure();
-            dataType sum_value = 0;
+            dataType sum_value;
+            if (is_numcpp_v<dataType>)
+            {
+                sum_value = dataType(matrix[0][0].row, matrix[0][0].col, 0);
+            }
+            else
+            {
+                sum_value = 0;
+            }
+
             if (this->optimization == false)
             {
                 for (size_t i = 0; i < this->row; i++)
@@ -1832,16 +1887,33 @@ namespace np
         friend std::ostream &operator<<(std::ostream &stream, const Numcpp<dataType> &m)
         {
             m.ensure();
-            stream << '(' << m.row << ',' << m.col << ')' << "[\n";
-            for (size_t i = 0; i < m.row; ++i)
+            if constexpr (is_numcpp_v<dataType>)
             {
-                stream << "    [" << i << "][";
-                for (size_t j = 0; j < m.col; ++j)
+                stream << '(' << m.row << ',' << m.col << ')' << "{\n";
+                for (size_t i = 0; i < m.row; ++i)
                 {
-                    stream << (dataType)(m.matrix[i][j]) << (j == m.col - 1 ? "]\n" : " , ");
+                    for (size_t j = 0; j < m.col; ++j)
+                    {
+                        stream << "    [" << i << "][" << j << "]";
+                        stream << (dataType)(m.matrix[i][j]) << (j == m.col - 1 ? "}\n" : " \n");
+                    }
                 }
+                stream << "}\n";
             }
-            stream << "]\n";
+            else
+            {
+                stream << '(' << m.row << ',' << m.col << ')' << "[\n";
+                for (size_t i = 0; i < m.row; ++i)
+                {
+                    stream << "    [" << i << "][";
+                    for (size_t j = 0; j < m.col; ++j)
+                    {
+                        stream << (dataType)(m.matrix[i][j]) << (j == m.col - 1 ? "]\n" : " , ");
+                    }
+                }
+                stream << "]";
+            }
+
             return stream;
         }
 
@@ -1925,7 +1997,7 @@ namespace np
             {
                 for (size_t j = 0; j < i; j++)
                 {
-                    if (fabs(matrix[i][j] - matrix[j][i]) > tolerance)
+                    if (std::abs(matrix[i][j] - matrix[j][i]) > tolerance)
                     {
                         return false;
                     }
@@ -1988,7 +2060,7 @@ namespace np
                 {
                     for (size_t j = 0; j < i; j++)
                     {
-                        if (fabs(A.matrix[i][j]) > tolerance)
+                        if (std::abs(A.matrix[i][j]) > tolerance)
                         {
                             is_diag = false;
                             break;
@@ -2023,7 +2095,6 @@ namespace np
          */
         Numcpp(const cv::Mat &mat, bool copy_data = true)
         {
-            ensure();
             if (mat.empty())
             {
                 throw std::invalid_argument("OpenCV matrix is empty");
@@ -2066,6 +2137,7 @@ namespace np
             {
                 throw std::invalid_argument("Unsupported OpenCV matrix type");
             }
+            is_destroy = false;
         }
 
         /**
@@ -2270,7 +2342,7 @@ namespace np
                         dataType col_sum = 0;
                         for (size_t i = 0; i < row; ++i)
                         {
-                            col_sum += std::fabs(matrix[i][j]);
+                            col_sum += std::abs(matrix[i][j]);
                         }
                         max_col_sum = std::max(max_col_sum, col_sum);
                     }
@@ -2469,15 +2541,31 @@ namespace np
                     matrix[i] = new T[_col];
                     for (size_t j = 0; j < _col; j++)
                     {
-                        matrix[i][j] = (T)1;
+                        if constexpr (is_numcpp_v<T>)
+                        {
+                            matrix[i][j] = T();
+                        }
+                        else
+                        {
+                            matrix[i][j] = (T)1;
+                        }
                     }
                 }
             }
             else
             {
-                units::Alloc_thread_worker<T>(matrix, _row, _col, this->maxprocs, [](T **a, size_t i, size_t j)
-                                              { a[i][j] = (T)1; });
+                if constexpr (is_numcpp_v<T>)
+                {
+                    units::Alloc_thread_worker<T>(matrix, _row, _col, this->maxprocs, [](T **a, size_t i, size_t j)
+                                                  { a[i][j] = T(); });
+                }
+                else
+                {
+                    units::Alloc_thread_worker<T>(matrix, _row, _col, this->maxprocs, [](T **a, size_t i, size_t j)
+                                                  { a[i][j] = (T)1; });
+                }
             }
+            is_destroy = false;
         }
     }
     template <typename T>
@@ -2508,6 +2596,7 @@ namespace np
                 units::Alloc_thread_worker<T>(matrix, _row, _col, this->maxprocs, [value](T **a, size_t i, size_t j)
                                               { a[i][j] = value; });
             }
+            is_destroy = false;
         }
     }
     template <typename T>
@@ -2538,6 +2627,7 @@ namespace np
                 units::Copy_thread_worker<T>(matrix, _row, _col, &mat, this->maxprocs, [&](T **a, T **b, size_t i, size_t j)
                                              { a[i][j] = (*b)[i * _col + j]; });
             }
+            is_destroy = false;
         }
     }
     template <typename T>
@@ -2568,6 +2658,7 @@ namespace np
                 units::Copy_thread_worker<T>(matrix, _row, _col, mat, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
                                              { a[i][j] = b[i][j]; });
             }
+            is_destroy = false;
         }
     }
     template <typename T>
@@ -2598,6 +2689,7 @@ namespace np
                 units::Copy_thread_worker<T>(matrix, this->row, this->col, other.matrix, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
                                              { a[i][j] = b[i][j]; });
             }
+            is_destroy = false;
         }
     }
     template <typename T>
@@ -2617,6 +2709,7 @@ namespace np
             fread(matrix[i], sizeof(T), col, fp);
         }
         fclose(fp);
+        is_destroy = false;
     }
 
     template <typename T>
@@ -2629,8 +2722,19 @@ namespace np
 #endif
             for (size_t i = 0; i < this->row; i++)
             {
-                delete matrix[i];
-                matrix[i] = nullptr;
+                if (is_numcpp_v<T>)
+                {
+                    for (size_t j = 0; j < this->col; j++)
+                    {
+                        matrix[i][j].~T();
+                    }
+                    matrix[i] = nullptr;
+                }
+                else
+                {
+                    delete matrix[i];
+                    matrix[i] = nullptr;
+                }
             }
             delete[] matrix;
             matrix = nullptr;
@@ -2784,8 +2888,15 @@ namespace np
     template <typename T>
     T det_cal(T **det, size_t n)
     {
-
-        T detVal = 0; // 行列式的值
+        T detVal; // 行列式的值
+        if (is_numcpp_v<T>)
+        {
+            detVal = T(det[0][0].row, det[0][0].col, 0);
+        }
+        else
+        {
+            detVal = (T)0;
+        }
 
         if (n == 1)
         {
@@ -2814,7 +2925,17 @@ namespace np
         }
         for (size_t i = 0; i < n - 1; i++)
         {
-            delete tempdet[i];
+            if (is_numcpp_v<T>)
+            {
+                for (size_t j = 0; j < n - 1; j++)
+                {
+                    tempdet[i][j].~T();
+                }
+            }
+            else
+            {
+                delete tempdet[i];
+            }
         }
         delete[] tempdet;
         return detVal;
@@ -2841,7 +2962,7 @@ namespace np
         }
 
         T det = determinant();
-        if (fabs(det) < 1e-10) // 使用适当容差检查行列式是否为0
+        if (std::abs(det) < 1e-10) // 使用适当容差检查行列式是否为0
         {
             throw std::invalid_argument("Matrix is singular (determinant is zero), cannot compute inverse.");
         }
@@ -2931,7 +3052,7 @@ namespace np
 
         for (size_t i = 0; i < min_dim; i++)
         {
-            if (fabs(Sigma[i][i]) > tolerance)
+            if (std::abs(Sigma[i][i]) > tolerance)
             {
                 Sigma_plus[i][i] = 1.0 / Sigma[i][i];
             }
@@ -3468,370 +3589,5 @@ namespace np
 
         return {K, P};
     }
-
-    /**
-     * 二次规划（QP）问题求解器配置参数
-     */
-    template <typename T>
-    struct QPConfig
-    {
-        int max_iter = 1000;  // 最大迭代次数
-        T tolerance = 1e-6;   // 收敛容差
-        T rho = 1.0;          // 增广拉格朗日参数
-        T alpha = 1.6;        // 过松弛参数 (1 < alpha < 2)
-        bool verbose = false; // 是否输出迭代信息
-    };
-
-    /**
-     * QP问题求解结果
-     */
-    template <typename T>
-    struct QPSolution
-    {
-        Numcpp<T> x;        // 最优解
-        Numcpp<T> lambda;   // 等式约束拉格朗日乘子
-        Numcpp<T> mu;       // 不等式约束拉格朗日乘子
-        T objective_value;  // 目标函数值
-        int iterations;     // 实际迭代次数
-        bool converged;     // 是否收敛
-        std::string status; // 求解状态
-    };
-
-    /**
-     * 使用ADMM方法求解二次规划问题
-     *
-     * 问题形式:
-     *   minimize     (1/2) * x^T * P * x + q^T * x
-     *   subject to   G * x <= h
-     *                A * x = b
-     *
-     * @param P 目标函数二次项矩阵 (n x n, 对称正定)
-     * @param q 目标函数一次项向量 (n x 1)
-     * @param G 不等式约束矩阵 (m x n)
-     * @param h 不等式约束向量 (m x 1)
-     * @param A 等式约束矩阵 (p x n)
-     * @param b 等式约束向量 (p x 1)
-     * @param config 求解器配置参数
-     * @return QPSolution 求解结果
-     */
-    template <typename T>
-    QPSolution<T> solve_qp_admm(const Numcpp<T> &P, const Numcpp<T> &q,
-                                const Numcpp<T> &G, const Numcpp<T> &h,
-                                const Numcpp<T> &A, const Numcpp<T> &b,
-                                const QPConfig<T> &config = QPConfig<T>())
-    {
-        // 验证输入维度
-        size_t n = P.row; // 决策变量维度
-        size_t m = G.row; // 不等式约束个数
-        size_t p = A.row; // 等式约束个数
-
-        if (P.col != n || q.row != n || q.col != 1 ||
-            G.col != n || h.row != m || h.col != 1 ||
-            A.col != n || b.row != p || b.col != 1)
-        {
-            throw std::invalid_argument("Invalid matrix dimensions in QP problem");
-        }
-
-        // 检查P是否对称
-        if (!P.is_symmetric())
-        {
-            throw std::invalid_argument("Matrix P must be symmetric");
-        }
-
-        QPSolution<T> result;
-
-        // 初始化变量
-        Numcpp<T> x(n, 1, 0.0);      // 原始变量
-        Numcpp<T> z(m, 1, 0.0);      // 不等式约束的辅助变量
-        Numcpp<T> u(m, 1, 0.0);      // 不等式约束的对偶变量
-        Numcpp<T> lambda(p, 1, 0.0); // 等式约束拉格朗日乘子
-
-        // 预计算常数矩阵
-        Numcpp<T> P_rhoI = P + Numcpp<T>(n, n).identity() * config.rho;
-        Numcpp<T> P_rhoI_inv = P_rhoI.inverse();
-
-        Numcpp<T> G_T = G.transpose();
-        Numcpp<T> A_T = A.transpose();
-
-        // 主迭代循环
-        T primal_residual = 0.0;
-        T dual_residual = 0.0;
-
-        for (int iter = 0; iter < config.max_iter; iter++)
-        {
-            // 保存上一次的x和z
-            Numcpp<T> x_prev = x;
-            Numcpp<T> z_prev = z;
-
-            // x-update: 最小化关于x的增广拉格朗日函数
-            Numcpp<T> rhs_x = q * -1 + G_T * ((z - u) * config.rho) + A_T * lambda;
-            if (p > 0)
-            {
-                rhs_x = rhs_x + A_T * lambda;
-            }
-            x = P_rhoI_inv * rhs_x;
-
-            // z-update with relaxation
-            Numcpp<T> Gx = G * x;
-            Numcpp<T> z_tilde = u + Gx;
-
-            // 过松弛
-            Numcpp<T> Gx_hat = Gx * config.alpha + z_prev * (1 - config.alpha);
-            z_tilde = u + Gx_hat;
-
-            // 投影到非正象限 (Gx <= h 等价于 Gx - h <= 0)
-            for (size_t i = 0; i < m; i++)
-            {
-                z[i][0] = std::min(z_tilde[i][0] - h[i][0], 0.0) + h[i][0];
-            }
-
-            // u-update (对偶变量更新)
-            u = u + Gx_hat - z;
-
-            // 等式约束处理 (如果有等式约束)
-            if (p > 0)
-            {
-                Numcpp<T> Ax_minus_b = A * x - b;
-                lambda = lambda + Ax_minus_b * config.rho;
-            }
-
-            // 计算残差
-            Numcpp<T> primal_residual_vec = G * x - z;
-            Numcpp<T> dual_residual_vec = G_T * (z - z_prev) * config.rho;
-
-            primal_residual = primal_residual_vec.norm();
-            dual_residual = dual_residual_vec.norm();
-
-            // 输出迭代信息
-            if (config.verbose && iter % 100 == 0)
-            {
-                T objective = 0.5 * (x.transpose() * P * x)[0][0] + (q.transpose() * x)[0][0];
-                std::cout << "Iter " << iter
-                          << ", Objective: " << objective
-                          << ", Primal residual: " << primal_residual
-                          << ", Dual residual: " << dual_residual << std::endl;
-            }
-
-            // 检查收敛
-            if (primal_residual < config.tolerance && dual_residual < config.tolerance)
-            {
-                result.converged = true;
-                result.iterations = iter + 1;
-                break;
-            }
-
-            if (iter == config.max_iter - 1)
-            {
-                result.converged = false;
-                result.iterations = config.max_iter;
-            }
-        }
-
-        // 计算最终结果
-        result.x = x;
-        result.mu = u; // 不等式约束的对偶变量
-        result.lambda = lambda;
-
-        // 计算目标函数值
-        result.objective_value = 0.5 * (x.transpose() * P * x)[0][0] + (q.transpose() * x)[0][0];
-
-        // 设置状态信息
-        if (result.converged)
-        {
-            result.status = "Converged";
-        }
-        else
-        {
-            result.status = "Max iterations reached";
-        }
-
-        return result;
-    }
-
-    /**
-     * 简化的QP求解器 - 只有不等式约束
-     */
-    template <typename T>
-    QPSolution<T> solve_qp(const Numcpp<T> &P, const Numcpp<T> &q,
-                           const Numcpp<T> &G, const Numcpp<T> &h,
-                           const QPConfig<T> &config = QPConfig<T>())
-    {
-        // 创建空的等式约束
-        Numcpp<T> A(1, P.row, 0);
-        Numcpp<T> b(1, 1, 0);
-
-        return solve_qp_admm(P, q, G, h, A, b, config);
-    }
-
-    /**
-     * 简化的QP求解器 - 只有等式约束
-     */
-    template <typename T>
-    QPSolution<T> solve_qp_equality(const Numcpp<T> &P, const Numcpp<T> &q,
-                                    const Numcpp<T> &A, const Numcpp<T> &b,
-                                    const QPConfig<T> &config = QPConfig<T>())
-    {
-        // 创建空的不等式约束
-        Numcpp<T> G(1, P.row, 0);
-        Numcpp<T> h(1, 1, 0);
-
-        return solve_qp_admm(P, q, G, h, A, b, config);
-    }
-
-    /**
-     * 非负最小二乘问题 (NNLS)
-     * minimize ||Cx - d||^2 subject to x >= 0
-     * 这等价于 QP: minimize (1/2)x^T(C^T C)x - (C^T d)^T x subject to x >= 0
-     */
-    template <typename T>
-    QPSolution<T> solve_nnls(const Numcpp<T> &C, const Numcpp<T> &d,
-                             const QPConfig<T> &config = QPConfig<T>())
-    {
-        size_t n = C.col;
-
-        // 转换为QP形式
-        Numcpp<T> P = C.transpose() * C;  // C^T C
-        Numcpp<T> q = -C.transpose() * d; // -C^T d
-
-        // 约束: -x <= 0 (等价于 x >= 0)
-        Numcpp<T> G = Numcpp<T>(n, n, 0.0).set_identity() * -1.0;
-        Numcpp<T> h = Numcpp<T>(n, 1, 0.0);
-
-        return solve_qp(P, q, G, h, config);
-    }
-
-    /**
-     * 带边界约束的QP问题
-     * minimize (1/2) * x^T * P * x + q^T * x
-     * subject to lb <= x <= ub
-     */
-    template <typename T>
-    QPSolution<T> solve_qp_bounds(const Numcpp<T> &P, const Numcpp<T> &q,
-                                  const Numcpp<T> &lb, const Numcpp<T> &ub,
-                                  const QPConfig<T> &config = QPConfig<T>())
-    {
-        size_t n = P.row;
-
-        if (lb.row != n || ub.row != n || lb.col != 1 || ub.col != 1)
-        {
-            throw std::invalid_argument("Bounds must have same dimension as x");
-        }
-
-        // 构建约束矩阵:
-        // [ I] x <= ub
-        // [-I] x <= -lb
-        Numcpp<T> G(2 * n, n);
-        Numcpp<T> h(2 * n, 1);
-
-        for (size_t i = 0; i < n; i++)
-        {
-            // 上界约束: x_i <= ub_i
-            G[i][i] = 1.0;
-            h[i][0] = ub[i][0];
-
-            // 下界约束: -x_i <= -lb_i 即 x_i >= lb_i
-            G[n + i][i] = -1.0;
-            h[n + i][0] = -lb[i][0];
-        }
-
-        return solve_qp(P, q, G, h, config);
-    }
-
-    /**
-     * 验证QP解的最优性条件 (KKT条件)
-     */
-    template <typename T>
-    bool verify_qp_solution(const Numcpp<T> &P, const Numcpp<T> &q,
-                            const Numcpp<T> &G, const Numcpp<T> &h,
-                            const Numcpp<T> &A, const Numcpp<T> &b,
-                            const QPSolution<T> &solution, T tolerance = 1e-6)
-    {
-        size_t n = P.row;
-        size_t m = G.row;
-        size_t p = A.row;
-
-        const Numcpp<T> &x = solution.x;
-        const Numcpp<T> &mu = solution.mu;
-
-        // 1. 原始可行性
-        Numcpp<T> Gx_minus_h = G * x - h;
-        bool primal_feasible = true;
-        for (size_t i = 0; i < m; i++)
-        {
-            if (Gx_minus_h[i][0] > tolerance)
-            {
-                primal_feasible = false;
-                break;
-            }
-        }
-
-        // 等式约束可行性
-        bool equality_feasible = true;
-        if (p > 0)
-        {
-            Numcpp<T> Ax_minus_b = A * x - b;
-            if (Ax_minus_b.norm() > tolerance)
-            {
-                equality_feasible = false;
-            }
-        }
-
-        // 2. 对偶可行性
-        bool dual_feasible = true;
-        for (size_t i = 0; i < m; i++)
-        {
-            if (mu[i][0] < -tolerance)
-            {
-                dual_feasible = false;
-                break;
-            }
-        }
-
-        // 3. 互补松弛条件
-        bool complementary_slackness = true;
-        for (size_t i = 0; i < m; i++)
-        {
-            if (std::abs(mu[i][0] * (Gx_minus_h[i][0])) > tolerance)
-            {
-                complementary_slackness = false;
-                break;
-            }
-        }
-
-        // 4. 平稳性条件
-        Numcpp<T> stationarity = P * x + q + G.transpose() * mu;
-        if (p > 0)
-        {
-            stationarity = stationarity + A.transpose() * solution.lambda;
-        }
-        bool stationary = stationarity.norm() < tolerance;
-
-        return primal_feasible && equality_feasible && dual_feasible &&
-               complementary_slackness && stationary;
-    }
-
-    /**
-     * 打印QP求解结果
-     */
-    template <typename T>
-    void print_qp_solution(const QPSolution<T> &solution)
-    {
-        std::cout << "QP Solution:" << std::endl;
-        std::cout << "Status: " << solution.status << std::endl;
-        std::cout << "Iterations: " << solution.iterations << std::endl;
-        std::cout << "Objective value: " << solution.objective_value << std::endl;
-        std::cout << "Solution x: " << solution.x.transpose() << std::endl;
-
-        if (solution.mu.row > 1)
-        {
-            std::cout << "Inequality multipliers mu: " << solution.mu.transpose() << std::endl;
-        }
-
-        if (solution.lambda.row > 1)
-        {
-            std::cout << "Equality multipliers lambda: " << solution.lambda.transpose() << std::endl;
-        }
-    }
-
 } // namespace np
 #endif //!__NUMCPP__H__

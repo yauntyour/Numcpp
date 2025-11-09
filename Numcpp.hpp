@@ -1838,7 +1838,7 @@ namespace np
         {
             ensure();
             dataType sum_value;
-            if (is_numcpp_v<dataType>)
+            if constexpr (is_numcpp_v<dataType>)
             {
                 sum_value = dataType(matrix[0][0].row, matrix[0][0].col, 0);
             }
@@ -1965,7 +1965,7 @@ namespace np
         void svd(Numcpp<dataType> &U, Numcpp<dataType> &S, Numcpp<dataType> &V) const;
         std::vector<Numcpp<dataType>> svd() const;
 
-        void zero_approximation()
+        void zero_approximation(double tolerance = 1e-6)
         {
             ensure();
             if (this->optimization == false)
@@ -1974,7 +1974,7 @@ namespace np
                 {
                     for (size_t j = 0; j < this->col; j++)
                     {
-                        if (this->matrix[i][j] < 1e-6)
+                        if (this->matrix[i][j] < tolerance)
                         {
                             this->matrix[i][j] *= 0;
                         }
@@ -1983,8 +1983,12 @@ namespace np
             }
             else
             {
-                units::thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [](dataType **a, size_t i, size_t j)
-                                               { a[i][j] *= 0; });
+                units::thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [=](dataType **a, size_t i, size_t j)
+                                               {
+                                                if (a[i][j] < tolerance)
+                                                {
+                                                    a[i][j] *= 0;
+                                                } });
             }
         }
         // 检查矩阵是否对称
@@ -2010,6 +2014,11 @@ namespace np
         void set_identity()
         {
             ensure();
+            if (row != col)
+            {
+                throw std::runtime_error("row != col");
+            }
+
             for (size_t i = 0; i < row; i++)
             {
                 for (size_t j = 0; j < col; j++)
@@ -3588,6 +3597,101 @@ namespace np
         np::Numcpp<T> K = (R + BT * P * B).inverse() * BT * P * A;
 
         return {K, P};
+    }
+
+    // please ensure the matrix's shape is true or you will get the multiolication error
+    template <typename T>
+    np::Numcpp<T> solve_QP(const np::Numcpp<T> &Q, const np::Numcpp<T> &C,
+                           const np::Numcpp<T> &A, const np::Numcpp<T> &b,
+                           const np::Numcpp<T> &E, const np::Numcpp<T> &d,
+                           T eta = 1, T Tol = 1e-6, int max_iter = 1000,
+                           // Optimizer is the function of eta's updata curve.
+                           const np::Numcpp<T> &x0 = np::Numcpp<T>())
+    {
+        // 参数验证
+        if (Q.row != Q.col)
+        {
+            throw std::invalid_argument("Q matrix must be square");
+        }
+        size_t n = Q.row; // 变量维度
+
+        if (C.row != n || C.col != 1)
+        {
+            throw std::invalid_argument("C must be n x 1 vector");
+        }
+        if (A.row > 0 && (A.col != n || b.row != A.row || b.col != 1))
+        {
+            throw std::invalid_argument("A and b dimensions mismatch");
+        }
+        if (E.row > 0 && (E.col != n || d.row != E.row || d.col != 1))
+        {
+            throw std::invalid_argument("E and d dimensions mismatch");
+        }
+
+        // 初始化变量
+        np::Numcpp<T> x = (x0.row == n && x0.col == 1) ? x0 : np::Numcpp<T>(n, 1, 0.1);
+
+        // 初始化拉格朗日乘子
+        np::Numcpp<T> lambda = (E.row > 0) ? np::Numcpp<T>(E.row, 1, 0.1) : np::Numcpp<T>();
+        np::Numcpp<T> mu = (A.row > 0) ? np::Numcpp<T>(A.row, 1, 0.1) : np::Numcpp<T>();
+
+        for (int iter = 0; iter < max_iter; iter++)
+        {
+            // 计算梯度
+            np::Numcpp<T> grad = Q * x + C;
+
+            // 添加等式约束梯度
+            if (E.row > 0)
+            {
+                grad = grad + E.transpose() * lambda;
+            }
+
+            // 添加不等式约束梯度
+            if (A.row > 0)
+            {
+                grad = grad + A.transpose() * mu;
+            }
+
+            // 检查收敛条件
+            T grad_norm = grad.norm(np::L2);
+            if (grad_norm < Tol)
+            {
+                std::cout << "QP converged after " << iter << " iterations" << std::endl;
+                break;
+            }
+
+            // 更新主变量
+            x = x - grad * eta;
+
+            // 更新拉格朗日乘子（对偶上升）
+            if (E.row > 0)
+            {
+                np::Numcpp<T> eq_violation = E * x - d;
+                lambda = lambda + eq_violation * eta;
+            }
+
+            if (A.row > 0)
+            {
+                np::Numcpp<T> ineq_violation = A * x - b;
+                // 投影到非负象限
+                for (size_t i = 0; i < mu.row; i++)
+                {
+                    mu[i][0] = std::max(T(0), mu[i][0] + eta * ineq_violation[i][0]);
+                }
+            }
+
+            if (iter % 100 && iter > 0)
+            {
+                eta *= 0.95;
+            }
+
+            if (iter == max_iter - 1)
+            {
+                std::cout << "QP reached maximum iterations" << std::endl;
+            }
+        }
+
+        return x;
     }
 } // namespace np
 #endif //!__NUMCPP__H__

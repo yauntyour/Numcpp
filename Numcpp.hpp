@@ -3158,6 +3158,10 @@ namespace np
         Vt.to(DEVICE_LOCAL);
     }
 #endif
+    /**
+     * @brief T** to Numcpp
+     *
+     */
 #define MATtoNumcpp(mat_name, Numcpp, row, col) \
     for (size_t i = 0; i < row; i++)            \
     {                                           \
@@ -3561,7 +3565,18 @@ namespace np
         return result;
     }
 
-    // LQR solver
+    /**
+     * @brief LQR solver
+     *
+     * @tparam T
+     * @param A
+     * @param B
+     * @param Q
+     * @param R
+     * @param max_iter 最大迭代次数
+     * @param tolerance 精度
+     * @return std::pair<np::Numcpp<T>, np::Numcpp<T>> = { K, P}
+     */
     template <typename T>
     std::pair<np::Numcpp<T>, np::Numcpp<T>> solve_lqr(
         const np::Numcpp<T> &A, const np::Numcpp<T> &B,
@@ -3599,11 +3614,28 @@ namespace np
         return {K, P};
     }
 
-    // please ensure the matrix's shape is true or you will get the multiolication error
+    /**
+     * @brief QP solver
+     *
+     * @tparam T
+     * @param Q
+     * @param C
+     * @param A
+     * @param b
+     * @param E
+     * @param d
+     * @param flag eta *= flag,每100次迭代eta指数下降一个flag
+     * @param eta 进步效率，通过flag控制下降速率
+     * @param Tol 精度
+     * @param max_iter 最大迭代次数
+     * @param x0
+     * @return np::Numcpp<T> = X 最优解
+     */
     template <typename T>
     np::Numcpp<T> solve_QP(const np::Numcpp<T> &Q, const np::Numcpp<T> &C,
                            const np::Numcpp<T> &A, const np::Numcpp<T> &b,
                            const np::Numcpp<T> &E, const np::Numcpp<T> &d,
+                           int flag = 0.398107,
                            T eta = 1, T Tol = 1e-6, int max_iter = 1000,
                            // Optimizer is the function of eta's updata curve.
                            const np::Numcpp<T> &x0 = np::Numcpp<T>())
@@ -3682,7 +3714,7 @@ namespace np
 
             if (iter % 100 && iter > 0)
             {
-                eta *= 0.95;
+                eta *= flag;
             }
 
             if (iter == max_iter - 1)

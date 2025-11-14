@@ -1093,7 +1093,7 @@ namespace np
             else
             {
                 Numcpp<dataType> result;
-                if (is_numcpp_v<dataType>)
+                if constexpr (is_numcpp_v<dataType>)
                 {
                     result = Numcpp<dataType>(this->row, this->col, this->matrix[0][0]);
                 }
@@ -1208,7 +1208,7 @@ namespace np
             else
             {
                 Numcpp<dataType> result;
-                if (is_numcpp_v<dataType>)
+                if constexpr (is_numcpp_v<dataType>)
                 {
                     result = Numcpp<dataType>(this->row, this->col, this->matrix[0][0]);
                 }
@@ -2731,7 +2731,7 @@ namespace np
 #endif
             for (size_t i = 0; i < this->row; i++)
             {
-                if (is_numcpp_v<T>)
+                if constexpr (is_numcpp_v<T>)
                 {
                     for (size_t j = 0; j < this->col; j++)
                     {
@@ -2898,7 +2898,7 @@ namespace np
     T det_cal(T **det, size_t n)
     {
         T detVal; // 行列式的值
-        if (is_numcpp_v<T>)
+        if constexpr (is_numcpp_v<T>)
         {
             detVal = T(det[0][0].row, det[0][0].col, 0);
         }
@@ -2934,7 +2934,7 @@ namespace np
         }
         for (size_t i = 0; i < n - 1; i++)
         {
-            if (is_numcpp_v<T>)
+            if constexpr (is_numcpp_v<T>)
             {
                 for (size_t j = 0; j < n - 1; j++)
                 {

@@ -592,7 +592,7 @@ namespace units
         }
         else
         {
-            throw std::invalid_argument("Matrix is too large or no a even matrix, use multicore optimization or do chunked iterative transport, turn on Coppersmith Winograd algorithm if needed");
+            throw std::invalid_argument("Matrix is too large or no a even matrix, use multicore optimization or do chunked iterative transport, turn on Coppersmith Winograd algorithm if needed.");
         }
     }
 
@@ -894,7 +894,14 @@ namespace np
         {
             if (matrix == nullptr && is_destroy == true)
             {
-                throw std::runtime_error("matrix is a nullptr && is_destroy = true");
+                if (row == 0 && col == 0)
+                {
+                    throw std::runtime_error("The matrix maybe had not been init.");
+                }
+                else
+                {
+                    throw std::runtime_error("The matrix maybe had been destoried.");
+                }
             }
         }
 
@@ -1040,7 +1047,7 @@ namespace np
             ensure();
             if (other.row != this->row || other.col != this->col)
             {
-                throw std::invalid_argument("Invalid Matrix");
+                throw std::invalid_argument("Invalid Matrix.");
             }
             else
             {
@@ -1069,7 +1076,7 @@ namespace np
                         {
                             std::cerr << __func__ << "()::__global__ function error "
                                       << "CUDA error: " << cudaGetErrorString(err) << std::endl;
-                            throw std::runtime_error("CUDA runtime error");
+                            throw std::runtime_error("CUDA runtime error.");
                         }
                     }
                     else
@@ -1088,7 +1095,7 @@ namespace np
             ensure();
             if (other.row != this->row || other.col != this->col)
             {
-                throw std::invalid_argument("Invalid Matrix");
+                throw std::invalid_argument("Invalid Matrix.");
             }
             else
             {
@@ -1155,7 +1162,7 @@ namespace np
             ensure();
             if (other.row != this->row || other.col != this->col)
             {
-                throw std::invalid_argument("Invalid Matrix");
+                throw std::invalid_argument("Invalid Matrix.");
             }
             else
             {
@@ -1184,7 +1191,7 @@ namespace np
                         {
                             std::cerr << __func__ << "()::__global__ function error "
                                       << "CUDA error: " << cudaGetErrorString(err) << std::endl;
-                            throw std::runtime_error("CUDA runtime error");
+                            throw std::runtime_error("CUDA runtime error.");
                         }
                     }
                     else
@@ -1203,7 +1210,7 @@ namespace np
             ensure();
             if (other.row != this->row || other.col != this->col)
             {
-                throw std::invalid_argument("Invalid Matrix");
+                throw std::invalid_argument("Invalid Matrix.");
             }
             else
             {
@@ -1341,7 +1348,7 @@ namespace np
                     {
                         std::cerr << __func__ << "()::__global__ function error "
                                   << "CUDA error: " << cudaGetErrorString(err) << std::endl;
-                        throw std::runtime_error("CUDA runtime error");
+                        throw std::runtime_error("CUDA runtime error.");
                     }
                 }
                 else
@@ -1390,7 +1397,7 @@ namespace np
                     {
                         std::cerr << __func__ << "()::__global__ function error "
                                   << "CUDA error: " << cudaGetErrorString(err) << std::endl;
-                        throw std::runtime_error("CUDA runtime error");
+                        throw std::runtime_error("CUDA runtime error.");
                     }
                 }
                 else
@@ -1431,7 +1438,7 @@ namespace np
                     {
                         std::cerr << __func__ << "()::__global__ function error "
                                   << "CUDA error: " << cudaGetErrorString(err) << std::endl;
-                        throw std::runtime_error("CUDA runtime error");
+                        throw std::runtime_error("CUDA runtime error.");
                     }
                 }
                 else
@@ -1481,7 +1488,7 @@ namespace np
                     {
                         std::cerr << __func__ << "()::__global__ function error "
                                   << "CUDA error: " << cudaGetErrorString(err) << std::endl;
-                        throw std::runtime_error("CUDA runtime error");
+                        throw std::runtime_error("CUDA runtime error.");
                     }
                 }
                 else
@@ -1522,7 +1529,7 @@ namespace np
                     {
                         std::cerr << __func__ << "()::__global__ function error "
                                   << "CUDA error: " << cudaGetErrorString(err) << std::endl;
-                        throw std::runtime_error("CUDA runtime error");
+                        throw std::runtime_error("CUDA runtime error.");
                     }
                 }
                 else
@@ -1572,7 +1579,7 @@ namespace np
                     {
                         std::cerr << __func__ << "()::__global__ function error "
                                   << "CUDA error: " << cudaGetErrorString(err) << std::endl;
-                        throw std::runtime_error("CUDA runtime error");
+                        throw std::runtime_error("CUDA runtime error.");
                     }
                 }
                 else
@@ -1614,7 +1621,7 @@ namespace np
                     {
                         std::cerr << __func__ << "()::__global__ function error "
                                   << "CUDA error: " << cudaGetErrorString(err) << std::endl;
-                        throw std::runtime_error("CUDA runtime error");
+                        throw std::runtime_error("CUDA runtime error.");
                     }
                 }
                 else
@@ -1635,7 +1642,7 @@ namespace np
             ensure();
             if (this->col != other.row)
             {
-                throw std::invalid_argument("Invalid Matrix");
+                throw std::invalid_argument("Invalid Matrix.");
             }
             else
             {
@@ -1732,7 +1739,7 @@ namespace np
         {
             if (sqrt(thread_num) * sqrt(thread_num) > std::thread::hardware_concurrency() || thread_num < 1)
             {
-                throw std::invalid_argument("Invalid maxprocs");
+                throw std::invalid_argument("Invalid maxprocs.");
             }
             else
             {
@@ -1830,7 +1837,7 @@ namespace np
             }
             else
             {
-                std::invalid_argument("FFT in self must require the complex type");
+                std::invalid_argument("FFT in self must require the complex type.");
             }
         }
 #endif
@@ -1871,7 +1878,7 @@ namespace np
             FILE *fp = fopen(path, "ab");
             if (fp == NULL)
             {
-                throw std::invalid_argument("Invalid path");
+                throw std::invalid_argument("Invalid path.");
             }
 #if CUDA_CHECK
             to(DEVICE_LOCAL);
@@ -1937,7 +1944,7 @@ namespace np
                 }
                 else
                 {
-                    throw std::out_of_range("Too many elements for matrix");
+                    throw std::out_of_range("Too many elements for matrix.");
                 }
                 return *this;
             }
@@ -1954,7 +1961,7 @@ namespace np
         {
             ensure();
             if (row * col == 0)
-                throw std::out_of_range("Matrix is empty");
+                throw std::out_of_range("Matrix is empty.");
             matrix[0][0] = value;
             return CommaInitializer(this, 1);
         }
@@ -2016,7 +2023,7 @@ namespace np
             ensure();
             if (row != col)
             {
-                throw std::runtime_error("row != col");
+                throw std::runtime_error("row != col.");
             }
 
             for (size_t i = 0; i < row; i++)
@@ -2041,7 +2048,7 @@ namespace np
             ensure();
             if (!is_symmetric(tolerance))
             {
-                throw std::invalid_argument("eig only supported for symmetric matrices");
+                throw std::invalid_argument("eig only supported for symmetric matrices.");
             }
 
             size_t n = row;
@@ -2106,7 +2113,7 @@ namespace np
         {
             if (mat.empty())
             {
-                throw std::invalid_argument("OpenCV matrix is empty");
+                throw std::invalid_argument("OpenCV matrix is empty.");
             }
 
             row = mat.rows;
@@ -2144,7 +2151,7 @@ namespace np
             }
             else
             {
-                throw std::invalid_argument("Unsupported OpenCV matrix type");
+                throw std::invalid_argument("Unsupported OpenCV matrix type.");
             }
             is_destroy = false;
         }
@@ -2232,7 +2239,7 @@ namespace np
             }
             else
             {
-                throw std::invalid_argument("Unsupported OpenCV matrix type");
+                throw std::invalid_argument("Unsupported OpenCV matrix type.");
             }
 
             return result;
@@ -2248,7 +2255,7 @@ namespace np
             ensure();
             if (mat.empty())
             {
-                throw std::invalid_argument("OpenCV matrix is empty");
+                throw std::invalid_argument("OpenCV matrix is empty.");
             }
 
             // 清理现有数据
@@ -2422,7 +2429,7 @@ namespace np
                 break;
 
             default:
-                throw std::invalid_argument("Unsupported norm type");
+                throw std::invalid_argument("Unsupported norm type.");
             }
 
             return result;
@@ -2432,11 +2439,11 @@ namespace np
             ensure();
             if (!(this->is_vector() && other.is_vector()))
             {
-                throw std::invalid_argument("Dot require two vectors");
+                throw std::invalid_argument("Dot require two vectors.");
             }
             if (this->row * this->col != other.row * other.col)
             {
-                throw std::invalid_argument("Two vectors must in a same dim");
+                throw std::invalid_argument("Two vectors must in a same dim.");
             }
             if (row == other.row)
             {
@@ -2499,7 +2506,7 @@ namespace np
         // A.col = B.row
         if (oper.col != B.row)
         {
-            throw std::invalid_argument("Invalid Matrix");
+            throw std::invalid_argument("Invalid Matrix.");
         }
         else
         {
@@ -2536,7 +2543,7 @@ namespace np
     {
         if (_row == 0 || _col == 0)
         {
-            throw "Invalid creation";
+            throw "Invalid creation.";
         }
         else
         {
@@ -2582,7 +2589,7 @@ namespace np
     {
         if (_row == 0 || _col == 0)
         {
-            throw "Invalid creation";
+            throw "Invalid creation.";
         }
         else
         {
@@ -2613,7 +2620,7 @@ namespace np
     {
         if (_row == 0 || _col == 0)
         {
-            throw "Invalid creation";
+            throw "Invalid creation.";
         }
         else
         {
@@ -2644,7 +2651,7 @@ namespace np
     {
         if (_row == 0 || _col == 0)
         {
-            throw "Invalid creation";
+            throw "Invalid creation.";
         }
         else
         {
@@ -2675,7 +2682,7 @@ namespace np
     {
         if (other.row == 0 || other.col == 0)
         {
-            throw std::invalid_argument("Invalid Matrix");
+            throw std::invalid_argument("Invalid Matrix.");
         }
         else
         {
@@ -2707,7 +2714,7 @@ namespace np
         FILE *fp = fopen(path, "rb");
         if (fp == NULL)
         {
-            throw std::invalid_argument("Invalid path");
+            throw std::invalid_argument("Invalid path.");
         }
         fread(&row, sizeof(size_t), 1, fp);
         fread(&col, sizeof(size_t), 1, fp);
@@ -2817,7 +2824,7 @@ namespace np
         this->ensure();
         if (other.row != this->row || other.col != this->col)
         {
-            throw std::invalid_argument("Invalid Matrix");
+            throw std::invalid_argument("Invalid Matrix.");
         }
         else
         {
@@ -2846,7 +2853,7 @@ namespace np
                     {
                         std::cerr << __func__ << "()::__global__ function error "
                                   << "CUDA error: " << cudaGetErrorString(err) << std::endl;
-                        throw std::runtime_error("CUDA runtime error");
+                        throw std::runtime_error("CUDA runtime error.");
                     }
                 }
                 else
@@ -2866,7 +2873,7 @@ namespace np
         this->ensure();
         if (other.row != this->row || other.col != this->col)
         {
-            throw std::invalid_argument("Invalid Matrix");
+            throw std::invalid_argument("Invalid Matrix.");
         }
         else
         {
@@ -2881,7 +2888,7 @@ namespace np
         FILE *fp = fopen(path, "rb");
         if (fp == NULL)
         {
-            throw std::invalid_argument("Invalid path");
+            throw std::invalid_argument("Invalid path.");
         }
         size_t row, col;
         fread(&row, sizeof(size_t), 1, fp);
@@ -3032,7 +3039,7 @@ namespace np
         this->ensure();
         if (row == 0 || col == 0)
         {
-            throw std::invalid_argument("Matrix is empty");
+            throw std::invalid_argument("Matrix is empty.");
         }
 
         // 计算 A^T * A
@@ -3142,7 +3149,7 @@ namespace np
     void cuda_svd(Numcpp<T> &A, Numcpp<T> &U, Numcpp<T> &S, Numcpp<T> &Vt)
     {
         // 仅支持实数类型
-        static_assert(std::is_same<T, float>::value || std::is_same<T, double>::value, "cuda_svd only supports float and double");
+        static_assert(std::is_same<T, float>::value || std::is_same<T, double>::value, "cuda_svd only supports float and double.");
 
         U = Numcpp<T>(A.row, A.row, 0);
         S = Numcpp<T>(A.row, A.col, 0);
@@ -3300,7 +3307,7 @@ namespace np
 
         if (rows == 0 || cols == 0)
         {
-            throw std::invalid_argument("Matrix dimensions must be positive");
+            throw std::invalid_argument("Matrix dimensions must be positive.");
         }
 
         Numcpp<T> result(rows, cols);
@@ -3345,7 +3352,7 @@ namespace np
 
         if (rows == 0 || cols == 0)
         {
-            throw std::invalid_argument("Matrix dimensions must be positive");
+            throw std::invalid_argument("Matrix dimensions must be positive.");
         }
 
         Numcpp<T> result(rows, cols);
@@ -3383,7 +3390,7 @@ namespace np
 
         if (covariance.row != covariance.col)
         {
-            throw std::invalid_argument("Covariance matrix must be square");
+            throw std::invalid_argument("Covariance matrix must be square.");
         }
 
         size_t n_features = covariance.row;
@@ -3400,7 +3407,7 @@ namespace np
         }
         else
         {
-            throw std::invalid_argument("Mean must be a 1 x n_features vector");
+            throw std::invalid_argument("Mean must be a 1 x n_features vector.");
         }
 
         // 对协方差矩阵进行Cholesky分解: covariance = L * L^T
@@ -3433,7 +3440,7 @@ namespace np
     {
         if (A.row != A.col)
         {
-            throw std::invalid_argument("Matrix must be square for Cholesky decomposition");
+            throw std::invalid_argument("Matrix must be square for Cholesky decomposition.");
         }
 
         size_t n = A.row;
@@ -3525,7 +3532,7 @@ namespace np
 
         if (components.empty())
         {
-            throw std::invalid_argument("At least one Gaussian component required");
+            throw std::invalid_argument("At least one Gaussian component required.");
         }
 
         // 如果没有提供权重，使用均匀权重
@@ -3537,7 +3544,7 @@ namespace np
 
         if (components.size() != actual_weights.size())
         {
-            throw std::invalid_argument("Number of components and weights must match");
+            throw std::invalid_argument("Number of components and weights must match.");
         }
 
         Numcpp<T> result(rows, cols);
@@ -3643,21 +3650,21 @@ namespace np
         // 参数验证
         if (Q.row != Q.col)
         {
-            throw std::invalid_argument("Q matrix must be square");
+            throw std::invalid_argument("Q matrix must be square.");
         }
         size_t n = Q.row; // 变量维度
 
         if (C.row != n || C.col != 1)
         {
-            throw std::invalid_argument("C must be n x 1 vector");
+            throw std::invalid_argument("C must be n x 1 vector.");
         }
         if (A.row > 0 && (A.col != n || b.row != A.row || b.col != 1))
         {
-            throw std::invalid_argument("A and b dimensions mismatch");
+            throw std::invalid_argument("A and b dimensions mismatch.");
         }
         if (E.row > 0 && (E.col != n || d.row != E.row || d.col != 1))
         {
-            throw std::invalid_argument("E and d dimensions mismatch");
+            throw std::invalid_argument("E and d dimensions mismatch.");
         }
 
         // 初始化变量
@@ -3719,7 +3726,7 @@ namespace np
 
             if (iter == max_iter - 1)
             {
-                std::cout << "QP reached maximum iterations" << std::endl;
+                std::cout << "QP reached maximum iterations." << std::endl;
             }
         }
 

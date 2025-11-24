@@ -35,13 +35,18 @@ constexpr bool is_complex_v = is_complex<T>::value;
         change_name[i] = mat[i];                         \
     }
 
+#define CUDA_DEF __has_include(<cuda.h>)
 // cuda code
-#if CUDA_CHECK
+#if CUDA_DEF
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <cusolverDn.h>
 #define DEVICE_CUDA 1
 #define DEVICE_LOCAL 0
+
+#define CUDA_CHECK(err)     \
+    if (err != cudaSuccess) \
+        printf("func:%s()::CUDA error: ", __func__, cudaGetErrorString(err));
 namespace cuda_op
 {
     template <typename T>
@@ -191,153 +196,53 @@ namespace cuda_op
             std::cerr << __func__ << "()::" << "CUDA error: " << cudaGetErrorString(err) << std::endl;
         }
     }
-    // 矩阵转置CUDA核函数
     template <typename T>
-    __global__ void kernel_transpose(T **mat, T **transposed, size_t rows, size_t cols)
+    __global__ void kernel_sum_op(T **mat, T *value)
     {
         int row = blockIdx.y * blockDim.y + threadIdx.y;
         int col = blockIdx.x * blockDim.x + threadIdx.x;
-
-        if (row < rows && col < cols)
-        {
-            transposed[col][row] = mat[row][col];
-        }
+        atomicAdd(value, mat[row][col]);
     }
-
-    // 计算A^T * A
     template <typename T>
-    void compute_ATA(T **A, T **ATA, size_t m, size_t n)
+    T sum(T **A, size_t A_row, size_t A_col)
     {
-        // 分配转置矩阵内存
-        T **A_T;
-        cudaMalloc((void **)&A_T, n * sizeof(T *));
-        for (size_t i = 0; i < n; i++)
-        {
-            cudaMalloc((void **)&A_T[i], m * sizeof(T));
-        }
-
-        // 执行转置
-        dim3 block(16, 16);
-        dim3 grid((m + block.x - 1) / block.x, (n + block.y - 1) / block.y);
-        kernel_transpose<T><<<grid, block>>>(A, A_T, m, n);
+        dim3 block(A_row, A_col);
+        T *result;
+        cudaMalloc((void **)&result, sizeof(T));
+        kernel_sum_op<T><<<block>>>(A, result);
         cudaDeviceSynchronize();
-
-        // 计算A^T * A
-        cuda_op::gemm<T>(A_T, n, m, A, n, ATA, 1.0, 0.0);
-
-        // 释放临时内存
-        for (size_t i = 0; i < n; i++)
+        T *sum = (T *)malloc(sizeof(T));
+        cudaMemcpy(sum, result, sizeof(T), cudaMemcpyDeviceToHost);
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess)
         {
-            cudaFree(A_T[i]);
+            std::cerr << __func__ << "()::" << "CUDA error: " << cudaGetErrorString(err) << std::endl;
         }
-        cudaFree(A_T);
+        return *sum;
     }
-
-    // 幂法求最大特征值和特征向量
     template <typename T>
-    T power_method(T **mat, T **vec, size_t size, int max_iter = 1000, T tol = 1e-6)
+    __global__ void kernel_abs_op(T **mat)
     {
-        T *temp = new T[size];
-        T lambda_old = 0.0, lambda_new = 0.0;
-
-        // 初始化特征向量
-        for (size_t i = 0; i < size; i++)
+        int row = blockIdx.y * blockDim.y + threadIdx.y;
+        int col = blockIdx.x * blockDim.x + threadIdx.x;
+        if (mat[row][col] < 0)
         {
-            vec[i][0] = 1.0 / sqrt((T)size);
+            mat[row][col] *= (T)-1;
         }
-
-        for (int iter = 0; iter < max_iter; iter++)
-        {
-            // 矩阵-向量乘法
-            for (size_t i = 0; i < size; i++)
-            {
-                temp[i] = 0.0;
-                for (size_t j = 0; j < size; j++)
-                {
-                    temp[i] += mat[i][j] * vec[j][0];
-                }
-            }
-
-            // 计算新的特征值（Rayleigh商）
-            lambda_new = 0.0;
-            T vec_norm = 0.0;
-            for (size_t i = 0; i < size; i++)
-            {
-                lambda_new += vec[i][0] * temp[i];
-                vec_norm += temp[i] * temp[i];
-            }
-            vec_norm = sqrt(vec_norm);
-
-            // 归一化特征向量
-            for (size_t i = 0; i < size; i++)
-            {
-                vec[i][0] = temp[i] / vec_norm;
-            }
-
-            // 检查收敛
-            if (std::abs(lambda_new - lambda_old) < tol)
-            {
-                break;
-            }
-            lambda_old = lambda_new;
-        }
-
-        delete[] temp;
-        return sqrt(lambda_new); // 奇异值是特征值的平方根
     }
-
-    // SVD主函数
     template <typename T>
-    void cuda_svd(T **A, T **U, T **S, T **V, size_t m, size_t n)
+    void abs(T **mat, size_t row, size_t col)
     {
-        cudaError_t err;
-        T **ATA = (T **)malloc(n * sizeof(T *));
-        for (size_t i = 0; i < n; i++)
+        dim3 block(row, col);
+        kernel_abs_op<T><<<block>>>(mat);
+
+        cudaDeviceSynchronize();
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess)
         {
-            err = cudaMalloc((void **)&ATA[i], n * sizeof(T));
-            if (err != cudaSuccess)
-            {
-                std::cerr << "CUDA malloc error in cuda_svd: " << cudaGetErrorString(err) << std::endl;
-                return;
-            }
+            std::cerr << __func__ << "()::" << "CUDA error: " << cudaGetErrorString(err) << std::endl;
         }
-
-        // 计算 A^T * A
-        compute_ATA<T>(A, ATA, m, n);
-
-        // 只计算最大奇异值（演示用）
-        T **vec = (T **)malloc(n * sizeof(T *));
-        for (size_t i = 0; i < n; i++)
-        {
-            err = cudaFree(ATA[i]);
-            if (err != cudaSuccess)
-            {
-                std::cerr << "CUDA free error: " << cudaGetErrorString(err) << std::endl;
-            }
-        }
-
-        // 计算最大特征值
-        T max_singular = power_method<T>(ATA, vec, n);
-
-        // 设置S矩阵（只设置最大的）
-        for (size_t i = 0; i < std::min(m, n); i++)
-        {
-            if (i == 0)
-                S[i][i] = max_singular;
-            else
-                S[i][i] = (T)0;
-        }
-
-        // 清理内存
-        for (size_t i = 0; i < n; i++)
-        {
-            cudaFree(ATA[i]);
-            cudaFree(vec[i]);
-        }
-        free(ATA);
-        free(vec);
     }
-
 } // namespace cuda_iterator
 #endif
 namespace units
@@ -862,19 +767,18 @@ namespace np
     template <typename dataType>
     class Numcpp
     {
-    private:
+    public:
         bool optimization = is_optimized;
         size_t maxprocs = MAX_thread;
         bool is_destroy = true;
-#if CUDA_CHECK
+#if CUDA_DEF
         bool mem_stat = false;
         bool mem_synced = false;
 #endif
-    public:
         using value_type = dataType;
         dataType **matrix = nullptr;
         size_t row = 0, col = 0;
-#if CUDA_CHECK
+#if CUDA_DEF
         bool MUL_GPU = true;
         bool auto_sync = false;
         dataType **device_data = nullptr;
@@ -889,7 +793,7 @@ namespace np
 
         void ensure() const
         {
-            if (matrix == nullptr && is_destroy == true)
+            if (matrix == nullptr || is_destroy == true)
             {
                 if (row == 0 && col == 0)
                 {
@@ -899,11 +803,17 @@ namespace np
                 {
                     throw std::runtime_error("The matrix maybe had been destoried.");
                 }
+#ifdef CUDA_DEF
+                if (matrix == nullptr && is_destroy == false && mem_stat == true)
+                {
+                    throw std::runtime_error("The matrix maybe no in Host but in GPU device.");
+                }
+#endif
             }
         }
 
 // operators
-#if CUDA_CHECK
+#if CUDA_DEF
         void to(const int device)
         {
             if (device == DEVICE_CUDA && (mem_stat == false || mem_synced == false))
@@ -944,6 +854,41 @@ namespace np
             }
             else if (device == DEVICE_LOCAL && mem_stat == true)
             {
+                if (matrix == nullptr)
+                {
+                    matrix = new dataType *[row];
+                    if (this->optimization == false)
+                    {
+                        for (size_t i = 0; i < row; i++)
+                        {
+                            matrix[i] = new dataType[col];
+                            for (size_t j = 0; j < col; j++)
+                            {
+                                if constexpr (is_numcpp_v<dataType>)
+                                {
+                                    matrix[i][j] = dataType();
+                                }
+                                else
+                                {
+                                    matrix[i][j] = (dataType)1;
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if constexpr (is_numcpp_v<dataType>)
+                        {
+                            units::Alloc_thread_worker<dataType>(matrix, row, col, this->maxprocs, [](dataType **a, size_t i, size_t j)
+                                                                 { a[i][j] = dataType(); });
+                        }
+                        else
+                        {
+                            units::Alloc_thread_worker<dataType>(matrix, row, col, this->maxprocs, [](dataType **a, size_t i, size_t j)
+                                                                 { a[i][j] = (dataType)1; });
+                        }
+                    }
+                }
                 dataType **temp;
                 cudaHostAlloc((void ***)&temp, row * sizeof(dataType *), cudaHostAllocDefault);
                 cudaMemcpy(temp, device_data, row * sizeof(dataType *), cudaMemcpyDeviceToHost);
@@ -978,7 +923,6 @@ namespace np
             }
         }
 #endif
-
         void operator=(const Numcpp<dataType> &other)
         {
             if (other.row != this->row || other.col != this->col)
@@ -1060,7 +1004,7 @@ namespace np
                 }
                 else
                 {
-#if CUDA_CHECK
+#if CUDA_DEF
                     if (this->mem_stat == true && other.mem_stat == true)
                     {
                         dim3 block(this->row, this->col);
@@ -1118,7 +1062,7 @@ namespace np
                 }
                 else
                 {
-#if CUDA_CHECK
+#if CUDA_DEF
                     if (this->mem_stat == true && other.mem_stat == true)
                     {
                         result.to(DEVICE_CUDA);
@@ -1127,11 +1071,6 @@ namespace np
                         cuda_op::func_Ct<dataType> d_p;
                         cudaMemcpyFromSymbol(&d_p, cuda_op::add_opC<dataType>, sizeof(cuda_op::func_Ct<dataType>));
                         cuda_op::kernel_ternary_op<dataType><<<block>>>(result.device_data, this->device_data, other.device_data, d_p);
-
-                        if (result.auto_sync == true)
-                        {
-                            result.to(DEVICE_LOCAL);
-                        }
 
                         cudaError_t err = cudaGetLastError();
                         if (err != cudaSuccess)
@@ -1175,7 +1114,7 @@ namespace np
                 }
                 else
                 {
-#if CUDA_CHECK
+#if CUDA_DEF
                     if (this->mem_stat == true && other.mem_stat == true)
                     {
                         dim3 block(this->row, this->col);
@@ -1233,7 +1172,7 @@ namespace np
                 }
                 else
                 {
-#if CUDA_CHECK
+#if CUDA_DEF
                     if (this->mem_stat == true && other.mem_stat == true)
                     {
                         result.to(DEVICE_CUDA);
@@ -1243,10 +1182,6 @@ namespace np
                         cudaMemcpyFromSymbol(&d_p, cuda_op::cut_opC<dataType>, sizeof(cuda_op::func_Ct<dataType>));
                         cuda_op::kernel_ternary_op<dataType><<<block>>>(result.device_data, this->device_data, other.device_data, d_p);
 
-                        if (result.auto_sync == true)
-                        {
-                            result.to(DEVICE_LOCAL);
-                        }
                         cudaError_t err = cudaGetLastError();
                         if (err != cudaSuccess)
                         {
@@ -1285,7 +1220,7 @@ namespace np
             }
             else
             {
-#if CUDA_CHECK
+#if CUDA_DEF
                 if (this->mem_stat == true)
                 {
                     result.to(DEVICE_CUDA);
@@ -1334,7 +1269,7 @@ namespace np
             }
             else
             {
-#if CUDA_CHECK
+#if CUDA_DEF
                 if (this->mem_stat == true)
                 {
                     dim3 block(this->row, this->col);
@@ -1375,7 +1310,7 @@ namespace np
             }
             else
             {
-#if CUDA_CHECK
+#if CUDA_DEF
                 if (this->mem_stat == true)
                 {
                     result.to(DEVICE_CUDA);
@@ -1424,7 +1359,7 @@ namespace np
             }
             else
             {
-#if CUDA_CHECK
+#if CUDA_DEF
                 if (this->mem_stat == true)
                 {
                     dim3 block(this->row, this->col);
@@ -1466,7 +1401,7 @@ namespace np
             }
             else
             {
-#if CUDA_CHECK
+#if CUDA_DEF
                 if (this->mem_stat == true)
                 {
                     result.to(DEVICE_CUDA);
@@ -1515,7 +1450,7 @@ namespace np
             }
             else
             {
-#if CUDA_CHECK
+#if CUDA_DEF
                 if (this->mem_stat == true)
                 {
                     dim3 block(this->row, this->col);
@@ -1557,7 +1492,7 @@ namespace np
             }
             else
             {
-#if CUDA_CHECK
+#if CUDA_DEF
                 if (this->mem_stat == true)
                 {
                     result.to(DEVICE_CUDA);
@@ -1607,7 +1542,7 @@ namespace np
             }
             else
             {
-#if CUDA_CHECK
+#if CUDA_DEF
                 if (this->mem_stat == true)
                 {
                     dim3 block(this->row, this->col);
@@ -1661,17 +1596,13 @@ namespace np
                 }
                 else
                 {
-#if CUDA_CHECK
+#if CUDA_DEF
                     if (this->MUL_GPU == true)
                     {
                         if (this->mem_stat == true && other.mem_stat == true)
                         {
                             result.to(DEVICE_CUDA);
                             cuda_op::gemm<dataType>(this->device_data, this->row, this->col, other.device_data, other.col, result.device_data);
-                            if (result.auto_sync == true)
-                            {
-                                result.to(DEVICE_LOCAL);
-                            }
                         }
                         else
                         {
@@ -1686,6 +1617,7 @@ namespace np
                     units::mm_generate(this->matrix, other.matrix, result.matrix, this->row, other.row, this->col, other.col, 0, 0, 0, 0);
 #endif
                 }
+                printf("copy init");
                 return result;
             }
         }
@@ -1746,7 +1678,7 @@ namespace np
         // delete
         ~Numcpp();
 // FFT only the cuda disable can used
-#if !CUDA_CHECK
+#if !CUDA_DEF
         // 正向/反向FFT（返回新矩阵）
         Numcpp<dataType> fft(int inv) const
         {
@@ -1863,9 +1795,22 @@ namespace np
             }
             else
             {
+#if CUDA_DEF
+                if (this->mem_stat == true)
+                {
+                    sum_value = cuda_op::sum<dataType>(device_data, row, col);
+                }
+                else
+                {
+                    dataType *p = &sum_value;
+                    units::thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [p](dataType **a, size_t i, size_t j)
+                                                   { (*p) += a[i][j]; });
+                }
+#else
                 dataType *p = &sum_value;
                 units::thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [p](dataType **a, size_t i, size_t j)
                                                { (*p) += a[i][j]; });
+#endif
             }
             return sum_value;
         }
@@ -1877,7 +1822,7 @@ namespace np
             {
                 throw std::invalid_argument("Invalid path.");
             }
-#if CUDA_CHECK
+#if CUDA_DEF
             to(DEVICE_LOCAL);
 #endif
             fwrite(&row, sizeof(size_t), 1, fp);
@@ -1915,7 +1860,7 @@ namespace np
                         stream << (dataType)(m.matrix[i][j]) << (j == m.col - 1 ? "]\n" : " , ");
                     }
                 }
-                stream << "]";
+                stream << "]\n";
             }
 
             return stream;
@@ -2031,7 +1976,7 @@ namespace np
                 }
             }
         }
-        Numcpp<dataType> identity()
+        Numcpp<dataType> identity() const
         {
             ensure();
             Numcpp<dataType> result(*this);
@@ -2110,6 +2055,59 @@ namespace np
             // 向量元素总数
             return row * col;
         }
+        void abs()
+        {
+            ensure();
+            if constexpr (is_numcpp_v<dataType>)
+            {
+                for (size_t i = 0; i < this->row; i++)
+                {
+                    for (size_t j = 0; j < this->col; j++)
+                    {
+                        this->matrix[i][j].abs();
+                    }
+                }
+            }
+            else
+            {
+                if (this->optimization == false)
+                {
+                    for (size_t i = 0; i < this->row; i++)
+                    {
+                        for (size_t j = 0; j < this->col; j++)
+                        {
+                            if (this->matrix[i][j] < 0)
+                            {
+                                this->matrix[i][j] *= (dataType)-1;
+                            };
+                        }
+                    }
+                }
+                else
+                {
+#if CUDA_DEF
+                    if (this->mem_stat == true)
+                    {
+                        cuda_op::abs<dataType>(device_data, row, col);
+                    }
+                    else
+                    {
+                        units::thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [](dataType **a, size_t i, size_t j)
+                                                       { if (a[i][j] < 0)
+                                               {
+                                                a[i][j] *= (dataType)-1;
+                                               } });
+                    }
+#else
+                    units::thread_worker<dataType>(this->matrix, this->row, this->col, this->maxprocs, [](dataType **a, size_t i, size_t j)
+                                                   { if (a[i][j] < 0)
+                                               {
+                                                a[i][j] *= (dataType)-1;
+                                               } });
+#endif
+                }
+            }
+        }
 
         /**
          * 计算矩阵/向量的范数
@@ -2154,15 +2152,30 @@ namespace np
                 }
                 else
                 {
-                    dataType sum_sq = 0;
-                    for (size_t i = 0; i < row; ++i)
+                    if (this->optimization == true)
                     {
-                        for (size_t j = 0; j < col; ++j)
+                        Numcpp<dataType> temp(*this);
+#if CUDA_DEF
+                        if (this->mem_stat == true)
                         {
-                            sum_sq += matrix[i][j] * matrix[i][j];
+                            temp.to(DEVICE_CUDA);
                         }
+#endif
+                        temp.Hadamard_self(*this);
+                        result = std::sqrt(temp.sum());
                     }
-                    result = std::sqrt(sum_sq);
+                    else
+                    {
+                        dataType sum_sq = 0;
+                        for (size_t i = 0; i < row; ++i)
+                        {
+                            for (size_t j = 0; j < col; ++j)
+                            {
+                                sum_sq += matrix[i][j] * matrix[i][j];
+                            }
+                        }
+                        result = std::sqrt(sum_sq);
+                    }
                 }
                 break;
 
@@ -2193,10 +2206,8 @@ namespace np
                 }
                 else
                 {
-                    auto temp = ((*this) * Numcpp<dataType>(col, 1))<mklamb(dataType, {
-                        return std::abs(x);
-                    })>
-                        NULL;
+                    Numcpp<dataType> temp = ((*this) * Numcpp<dataType>(col, 1, 1));
+                    temp.abs();
                     for (size_t i = 0; i < row; i++)
                     {
                         if (temp[i][0] > result)
@@ -2226,7 +2237,18 @@ namespace np
             }
             if (row == other.row)
             {
-                dataType result = 0;
+                dataType result;
+                if constexpr (is_numcpp_v<dataType>)
+                {
+                    size_t n = ((Numcpp *)this->matrix[0])->row;
+                    size_t m = ((Numcpp *)other.matrix[0])->col;
+                    using ValueType = typename dataType::value_type;
+                    result = Numcpp<ValueType>(this->row, other.col, Numcpp<ValueType>(n, m, 0));
+                }
+                else
+                {
+                    result = (dataType)0;
+                }
                 if (row == 1)
                 {
                     for (size_t i = 0; i < col; i++)
@@ -2268,17 +2290,22 @@ namespace np
         };
     };
     template <typename T>
-#if CUDA_CHECK
+#if CUDA_DEF
     smul_object<T> operator<(const Numcpp<T> &A, T (*function_object)(T A, T B))
 #elif __cplusplus < 202000L
     smul_object<T> operator<(const Numcpp<T> &A, T (*function_object)(T A, T B))
 #else
     smul_object<T> operator<(const Numcpp<T> &A, auto function_object)
-#endif // CUDA_CHECK
+#endif // CUDA_DEF
     {
         smul_object<T> oper(A, function_object);
         return oper;
     }
+    /**
+     * @brief A(m,n)<func>B(n,k) -> C(m,k),C[i][j] = ∑ f(A.row(i),B.col(i))
+     *
+     * @return Numcpp<T>
+     */
     template <typename T>
     Numcpp<T> operator>(const smul_object<T> &oper, const Numcpp<T> &B)
     {
@@ -2289,20 +2316,25 @@ namespace np
         }
         else
         {
-            Numcpp<T> result(oper.row * B.col, B.row);
+            Numcpp<T> result(oper.row, B.col);
             for (size_t i = 0; i < B.col; i++)
             {
                 for (size_t j = 0; j < oper.row; j++)
                 {
                     for (size_t k = 0; k < oper.col; k++)
                     {
-                        result.matrix[j + i * oper.row][k] = oper.function_object((oper.matrix)[j][k], B.matrix[k][i]);
+                        result.matrix[j][k] += oper.function_object((oper.matrix)[j][k], B.matrix[k][i]);
                     }
                 }
             }
             return result;
         }
     }
+    /**
+     * @brief A(m,n)<func> NULL -> B(m,n),C[i][j] = func(A[i][j],0)
+     *
+     * @return Numcpp<T>
+     */
     template <typename T>
     Numcpp<T> operator>(const smul_object<T> &oper, void *data)
     {
@@ -2312,6 +2344,24 @@ namespace np
             for (size_t j = 0; j < oper.col; j++)
             {
                 result[i][j] = oper.function_object((oper.matrix)[i][j], (T)0);
+            }
+        }
+        return result;
+    }
+    /**
+     * @brief A(m,n)<func> value -> B(m,n),C[i][j] = func(A[i][j],value)
+     *
+     * @return Numcpp<T>
+     */
+    template <typename T>
+    Numcpp<T> operator>(const smul_object<T> &oper, T value)
+    {
+        Numcpp<T> result(oper.row, oper.col);
+        for (size_t i = 0; i < oper.row; i++)
+        {
+            for (size_t j = 0; j < oper.col; j++)
+            {
+                result[i][j] = oper.function_object((oper.matrix)[i][j], value);
             }
         }
         return result;
@@ -2512,7 +2562,7 @@ namespace np
     {
         if (matrix != nullptr && is_destroy != true)
         {
-#if CUDA_CHECK
+#if CUDA_DEF
             cuda_free();
 #endif
             for (size_t i = 0; i < this->row; i++)
@@ -2619,13 +2669,17 @@ namespace np
             }
             else
             {
-#if CUDA_CHECK
+#if CUDA_DEF
                 if (this->mem_stat == true && other.mem_stat == true)
                 {
                     dim3 block(this->row, this->col);
-                    cuda_op::func_Bt<T> d_p = new cuda_op::func_Bt<T>;
+                    cuda_op::func_Bt<T> d_p;
                     cudaMemcpyFromSymbol(&d_p, cuda_op::mul_opB<T>, sizeof(cuda_op::func_Bt<T>));
                     cuda_op::kernel_binary_op<T><<<block>>>(this->device_data, other.device_data, d_p);
+                    if (auto_sync == true)
+                    {
+                        to(DEVICE_LOCAL);
+                    }
 
                     cudaError_t err = cudaGetLastError();
                     if (err != cudaSuccess)
@@ -2657,6 +2711,12 @@ namespace np
         else
         {
             Numcpp<T> result(other);
+#if CUDA_DEF
+            if (other.mem_stat == true)
+            {
+                result.to(DEVICE_CUDA);
+            }
+#endif
             result.Hadamard_self(*this);
             return result;
         }
@@ -2923,27 +2983,6 @@ namespace np
         Numcpp<T> V = AT * U * S_inv.transpose();
         return {U, S, V};
     };
-#if CUDA_CHECK
-    template <typename T>
-    void cuda_svd(Numcpp<T> &A, Numcpp<T> &U, Numcpp<T> &S, Numcpp<T> &Vt)
-    {
-        // 仅支持实数类型
-        static_assert(std::is_same<T, float>::value || std::is_same<T, double>::value, "cuda_svd only supports float and double.");
-
-        U = Numcpp<T>(A.row, A.row, 0);
-        S = Numcpp<T>(A.row, A.col, 0);
-        Vt = Numcpp<T>(A.col, A.col, 0);
-
-        U.to(DEVICE_CUDA);
-        S.to(DEVICE_CUDA);
-        Vt.to(DEVICE_CUDA);
-        A.to(DEVICE_CUDA);
-        cuda_op::cuda_svd<T>(A.device_data, U.device_data, S.device_data, Vt.device_data, A.row, A.col);
-        U.to(DEVICE_LOCAL);
-        S.to(DEVICE_LOCAL);
-        Vt.to(DEVICE_LOCAL);
-    }
-#endif
     /**
      * @brief T** to Numcpp
      *

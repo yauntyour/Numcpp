@@ -2,14 +2,14 @@
 #include "Numcpp.hpp"
 
 using namespace np;
-#define nc_t double
+#define nc_t float
 int main()
 {
     np::is_optimized = true;
     Numcpp<nc_t> n(16, 16);
     Numcpp<nc_t> m(16, 16);
-    std::cout << n;
-    std::cout << m;
+    std::cout << "n:" << n;
+    std::cout << "m:" << m;
     // 上传到GPU
     n.to(DEVICE_CUDA);
     m.to(DEVICE_CUDA);
@@ -25,34 +25,31 @@ int main()
     // 同步回CPU查看结果
     n.to(DEVICE_LOCAL);
     m.to(DEVICE_LOCAL);
-    std::cout << n;
-    std::cout << m;
+    std::cout << "n:" << n;
+    std::cout << "m:" << m;
 
     // GPU加速的矩阵乘法（无优化算法）
     Numcpp<nc_t> result = n * m;
     result.to(DEVICE_LOCAL);
-    std::cout << result;
+    std::cout << "n * m:" << result;
 
     // 同位加法
-    result = n + m;
+    result = n - m;
     result.to(DEVICE_LOCAL);
-    std::cout << result;
+    std::cout << "n + m:" << result;
 
     // 本位减法
     n -= m;
     n.to(DEVICE_LOCAL);
-    std::cout << n;
+    std::cout << "n -= m" << n;
 
     // 同位广播 & 开启自动同步
     n.auto_sync = true;
-    std::cout << (n - 10) / 8.0 * 5 + 3 - 2 * 4 / 2 + 1 << std::endl;
+    std::cout << "(n - 10) / 8.0 * 5 + 3 - 2 * 4 / 2 + 1:" << (n - 10) / 8.0 * 5 + 3 - 2 * 4 / 2 + 1 << std::endl;
 
-    Numcpp<double> mat = (Numcpp<double>(4, 3) << 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);
-    Numcpp<double> U, S, Vt;
-    np::cuda_svd(mat, U, S, Vt);
-    std::cout << "SVD_U:" << U << "\n";
-    std::cout << "SVD_S:" << S << "\n";
-    std::cout << "SVD_Vt:" << Vt << "\n";
-    std::cout << "rebuild mat:" << U * S * Vt << "\n";
+    std::cout << "L1 norm:" << n.norm(L1) << std::endl;
+    std::cout << "L2 norm:" << n.norm() << std::endl;
+    std::cout << "inf norm:" << n.norm(INF) << std::endl;
+
     return 0;
 }

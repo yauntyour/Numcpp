@@ -34,9 +34,6 @@ constexpr bool is_complex_v = is_complex<T>::value;
     {                                                    \
         change_name[i] = mat[i];                         \
     }
-#ifdef OPENCV_ALL_HPP
-#define NUMCPP_OPENCV_SUPPORT
-#endif // OPENCV_ALL_HPP
 
 // cuda code
 #if CUDA_CHECK
@@ -2959,6 +2956,15 @@ namespace np
             Numcpp[i][j] = mat_name[i][j];      \
         }                                       \
     }
+#ifdef OPENCV_ALL_HPP
+    template <typename T>
+    Numcpp<T> cv2toNumcpp(cv::Mat &m)
+    {
+        Numcpp<T> mat((T *)m.data, m.rows, m.cols);
+        return mat;
+    }
+
+#endif
 } // namespace np
 
 // tools of matrix

@@ -35,7 +35,7 @@ constexpr bool is_complex_v = is_complex<T>::value;
         change_name[i] = mat[i];                         \
     }
 
-#define CUDA_DEF __has_include(<cuda.h>)
+#define CUDA_DEF __has_include(<cuda_runtime.h>)
 // cuda code
 #if CUDA_DEF
 #include <cuda_runtime.h>
@@ -804,8 +804,8 @@ namespace np
                 {
                     throw std::runtime_error("The matrix maybe had been destoried.");
                 }
-#ifdef CUDA_DEF
-                if (matrix == nullptr && is_destroy == false && mem_stat == true)
+#if CUDA_DEF
+                if (matrix == nullptr && is_destroy == false && this->mem_stat == true)
                 {
                     throw std::runtime_error("The matrix maybe no in Host but in GPU device.");
                 }
@@ -1049,7 +1049,7 @@ namespace np
                     }
                 }
             }
-            return std::move(*this);
+            return *this;
         }
         void operator+=(const Numcpp<dataType> &other)
         {
@@ -2576,7 +2576,6 @@ namespace np
     template <typename T>
     Numcpp<T>::Numcpp(const Numcpp<T> &other)
     {
-        printf("%s\n", __func__);
         row = other.row;
         col = other.col;
         optimization = other.optimization;
@@ -2610,7 +2609,6 @@ namespace np
                 matrix[i][j] = other.matrix[i][j];
             }
         }
-        printf("%s\n", __func__);
     }
     template <typename T>
     Numcpp<T>::Numcpp(char *path)

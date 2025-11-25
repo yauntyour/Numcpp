@@ -34,18 +34,20 @@ int main()
     std::cout << "n * m:" << result;
 
     // 同位加法
+    printf("1\n");
     result = n - m;
+    printf("1\n");
     result.to(DEVICE_LOCAL);
     std::cout << "n + m:" << result;
 
     // 本位减法
-    n -= m;
+    n += m;
     n.to(DEVICE_LOCAL);
     std::cout << "n -= m" << n;
 
     // 同位广播 & 开启自动同步
     n.auto_sync = true;
-    std::cout << "(n - 10) / 8.0 * 5 + 3 - 2 * 4 / 2 + 1:" << (n - 10) / 8.0 * 5 + 3 - 2 * 4 / 2 + 1 << std::endl;
+    std::cout << "n - 10" << n - 10 << std::endl;
 
     std::cout << "L1 norm:" << n.norm(L1) << std::endl;
     std::cout << "L2 norm:" << n.norm() << std::endl;

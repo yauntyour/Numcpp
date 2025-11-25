@@ -767,7 +767,7 @@ namespace np
     template <typename dataType>
     class Numcpp
     {
-    public:
+    private:
         bool optimization = is_optimized;
         size_t maxprocs = MAX_thread;
         bool is_destroy = true;
@@ -775,6 +775,7 @@ namespace np
         bool mem_stat = false;
         bool mem_synced = false;
 #endif
+    public:
         using value_type = dataType;
         dataType **matrix = nullptr;
         size_t row = 0, col = 0;
@@ -906,10 +907,54 @@ namespace np
                 mem_synced = false;
             }
         }
+        void cuda_alloc()
+        {
+            if (device_data == nullptr)
+            {
+                cudaMalloc((void **)&device_data, row * sizeof(dataType *));
+                dataType **temp;
+                cudaHostAlloc((void ***)&temp, row * sizeof(dataType *), cudaHostAllocDefault);
+                for (int i = 0; i < row; i++)
+                {
+                    cudaMalloc((void **)&(temp[i]), col * sizeof(dataType));
+                    cudaMemcpy(temp[i], matrix[i], col * sizeof(dataType), cudaMemcpyHostToDevice);
+                }
+                cudaMemcpy(device_data, temp, row * sizeof(dataType *), cudaMemcpyHostToDevice);
+                cudaFreeHost(temp);
+            }
+            cudaError_t err = cudaGetLastError();
+            if (err != cudaSuccess)
+            {
+                std::cerr << __func__ << "()::__global__ function error "
+                          << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+                throw std::runtime_error("CUDA runtime error.");
+            }
+        }
+        void cuda_copy(const np::Numcpp<dataType> &other)
+        {
+            if (row == other.row && col == other.col && device_data != nullptr)
+            {
+                for (size_t i = 0; i < row; i++)
+                {
+                    cudaMemcpy(device_data[i], other.device_data[i], col * sizeof(dataType), cudaMemcpyDeviceToDevice);
+                }
+            }
+            cudaError_t err = cudaGetLastError();
+            if (err != cudaSuccess)
+            {
+                std::cerr << __func__ << "()::__global__ function error "
+                          << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+                throw std::runtime_error("CUDA runtime error.");
+            }
+        }
         void cuda_free()
         {
             if (device_data != nullptr)
             {
+                for (size_t i = 0; i < row; i++)
+                {
+                    cudaFree(device_data[i]);
+                }
                 cudaFree(device_data);
                 cudaDeviceSynchronize();
                 cudaError_t err = cudaGetLastError();
@@ -923,65 +968,88 @@ namespace np
             }
         }
 #endif
-        void operator=(const Numcpp<dataType> &other)
+        // Add this in the public section of the Numcpp class
+        Numcpp<dataType> &operator=(const Numcpp<dataType> &other)
         {
-            if (other.row != this->row || other.col != this->col)
+            // 覆盖拷贝
+            if (col != other.col || row != other.row || matrix == nullptr)
             {
-                if (matrix == nullptr)
-                {
-#if CUDA_CHECK
-                    cuda_free();
-                    for (size_t i = 0; i < this->row; i++)
-                    {
-                        delete matrix[i];
-                    }
-                    delete[] matrix;
-#else
-                    for (size_t i = 0; i < this->row; i++)
-                    {
-                        delete matrix[i];
-                    }
-                    delete[] matrix;
-#endif
-                }
-                row = other.row;
-                col = other.col;
-                matrix = new dataType *[row];
-                if (this->optimization == false)
+                // Clean up existing resources
+                if (matrix != nullptr && !is_destroy)
                 {
                     for (size_t i = 0; i < row; i++)
                     {
-                        matrix[i] = new dataType[col];
-                        for (size_t j = 0; j < col; j++)
-                        {
-                            matrix[i][j] = other.matrix[i][j];
-                        }
+                        delete[] matrix[i];
+                    }
+                    delete[] matrix;
+                }
+
+#if CUDA_DEF
+                cuda_free();
+#endif
+                // Copy from other
+                row = other.row;
+                col = other.col;
+                optimization = other.optimization;
+                maxprocs = other.maxprocs;
+                is_destroy = false;
+
+#if CUDA_DEF
+                mem_stat = other.mem_stat;
+                mem_synced = other.mem_synced;
+                auto_sync = other.auto_sync;
+                MUL_GPU = other.MUL_GPU;
+                if (mem_stat == true && other.device_data != nullptr)
+                {
+                    cuda_alloc();
+                    cuda_copy(other);
+                }
+#endif
+                // Deep copy the matrix
+                matrix = new dataType *[row];
+                for (size_t i = 0; i < row; i++)
+                {
+                    matrix[i] = new dataType[col];
+                    for (size_t j = 0; j < col; j++)
+                    {
+                        matrix[i][j] = other.matrix[i][j];
                     }
                 }
-                else
-                {
-                    units::Copy_thread_worker<dataType>(matrix, this->row, this->col, other.matrix, this->maxprocs, [](dataType **a, dataType **b, size_t i, size_t j)
-                                                        { a[i][j] = b[i][j]; });
-                }
             }
+            // 填充拷贝
             else
             {
-                if (this->optimization == false)
+                optimization = other.optimization;
+                maxprocs = other.maxprocs;
+                is_destroy = false;
+
+#if CUDA_DEF
+                mem_stat = other.mem_stat;
+                mem_synced = other.mem_synced;
+                auto_sync = other.auto_sync;
+                MUL_GPU = other.MUL_GPU;
+                if (mem_stat == true && other.device_data != nullptr)
                 {
-                    for (size_t i = 0; i < this->row; i++)
+                    if (device_data != nullptr)
                     {
-                        for (size_t j = 0; j < this->col; j++)
-                        {
-                            this->matrix[i][j] = other.matrix[i][j];
-                        }
+                        cuda_copy(other);
+                    }
+                    else
+                    {
+                        cuda_alloc();
+                        cuda_copy(other);
                     }
                 }
-                else
+#endif
+                for (size_t i = 0; i < row; i++)
                 {
-                    units::thread_worker<dataType>(this->matrix, this->row, this->col, other.matrix, this->maxprocs, [](dataType **a, dataType **b, size_t i, size_t j)
-                                                   { a[i][j] = b[i][j]; });
+                    for (size_t j = 0; j < col; j++)
+                    {
+                        matrix[i][j] = other.matrix[i][j];
+                    }
                 }
             }
+            return std::move(*this);
         }
         void operator+=(const Numcpp<dataType> &other)
         {
@@ -1617,7 +1685,6 @@ namespace np
                     units::mm_generate(this->matrix, other.matrix, result.matrix, this->row, other.row, this->col, other.col, 0, 0, 0, 0);
 #endif
                 }
-                printf("copy init");
                 return result;
             }
         }
@@ -2154,7 +2221,7 @@ namespace np
                 {
                     if (this->optimization == true)
                     {
-                        Numcpp<dataType> temp(*this);
+                        Numcpp<dataType> temp = *this;
 #if CUDA_DEF
                         if (this->mem_stat == true)
                         {
@@ -2509,33 +2576,41 @@ namespace np
     template <typename T>
     Numcpp<T>::Numcpp(const Numcpp<T> &other)
     {
-        if (other.row == 0 || other.col == 0)
+        printf("%s\n", __func__);
+        row = other.row;
+        col = other.col;
+        optimization = other.optimization;
+        maxprocs = other.maxprocs;
+        is_destroy = false;
+#if CUDA_DEF
+        mem_stat = other.mem_stat;
+        mem_synced = other.mem_synced;
+        auto_sync = other.auto_sync;
+        MUL_GPU = other.MUL_GPU;
+        if (mem_stat == true && other.device_data != nullptr)
         {
-            throw std::invalid_argument("Invalid Matrix.");
-        }
-        else
-        {
-            row = other.row;
-            col = other.col;
-            matrix = new T *[row];
-            if (this->optimization == false)
+            if (device_data != nullptr)
             {
-                for (size_t i = 0; i < row; i++)
-                {
-                    matrix[i] = new T[col];
-                    for (size_t j = 0; j < col; j++)
-                    {
-                        matrix[i][j] = other.matrix[i][j];
-                    }
-                }
+                cuda_copy(other);
             }
             else
             {
-                units::Copy_thread_worker<T>(matrix, this->row, this->col, other.matrix, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
-                                             { a[i][j] = b[i][j]; });
+                cuda_alloc();
+                cuda_copy(other);
             }
-            is_destroy = false;
         }
+#endif
+        // Deep copy the matrix
+        matrix = new T *[row];
+        for (size_t i = 0; i < row; i++)
+        {
+            matrix[i] = new T[col];
+            for (size_t j = 0; j < col; j++)
+            {
+                matrix[i][j] = other.matrix[i][j];
+            }
+        }
+        printf("%s\n", __func__);
     }
     template <typename T>
     Numcpp<T>::Numcpp(char *path)

@@ -1099,6 +1099,7 @@ namespace np
                 }
             }
         }
+#if !CUDA_DEF
         Numcpp<dataType> operator+(const Numcpp<dataType> &other) const
         {
             ensure();
@@ -1130,37 +1131,14 @@ namespace np
                 }
                 else
                 {
-#if CUDA_DEF
-                    if (this->mem_stat == true && other.mem_stat == true)
-                    {
-                        result.to(DEVICE_CUDA);
-
-                        dim3 block(this->row, this->col);
-                        cuda_op::func_Ct<dataType> d_p;
-                        cudaMemcpyFromSymbol(&d_p, cuda_op::add_opC<dataType>, sizeof(cuda_op::func_Ct<dataType>));
-                        cuda_op::kernel_ternary_op<dataType><<<block>>>(result.device_data, this->device_data, other.device_data, d_p);
-
-                        cudaError_t err = cudaGetLastError();
-                        if (err != cudaSuccess)
-                        {
-                            std::cerr << __func__ << "()::__global__ function error "
-                                      << "CUDA error: " << cudaGetErrorString(err) << std::endl;
-                            throw std::runtime_error("CUDA runtime error");
-                        }
-                    }
-                    else
-                    {
-                        throw std::invalid_argument("Invalid Matrix Device: Both parties involved in the operation should be on the same device.");
-                    }
-#else
                     dataType **temp = other.matrix;
                     units::thread_worker<dataType>(this->matrix, this->row, this->col, temp, result.matrix, this->maxprocs, [](dataType **a, dataType **b, dataType **c, size_t i, size_t j)
                                                    { c[i][j] = a[i][j] + b[i][j]; });
-#endif
                 }
                 return result;
             }
         }
+#endif
         void operator-=(const Numcpp<dataType> &other)
         {
             ensure();
@@ -1209,6 +1187,7 @@ namespace np
                 }
             }
         }
+#if !CUDA_DEF
         Numcpp<dataType> operator-(const Numcpp<dataType> &other) const
         {
             ensure();
@@ -1322,6 +1301,7 @@ namespace np
             }
             return result;
         }
+#endif
         void operator+=(dataType n)
         {
             ensure();
@@ -1362,6 +1342,7 @@ namespace np
 #endif
             }
         }
+#if !CUDA_DEF
         Numcpp<dataType> operator-(dataType n) const
         {
             ensure();
@@ -1412,6 +1393,7 @@ namespace np
             }
             return result;
         }
+#endif
         void operator-=(dataType n)
         {
             ensure();
@@ -1453,6 +1435,7 @@ namespace np
             }
         }
 
+#if !CUDA_DEF
         Numcpp<dataType> operator*(dataType n) const
         {
             ensure();
@@ -1503,6 +1486,7 @@ namespace np
             }
             return result;
         }
+#endif
         void operator*=(dataType n)
         {
             ensure();
@@ -1543,6 +1527,7 @@ namespace np
 #endif
             }
         }
+#if !CUDA_DEF
         Numcpp<dataType> operator/(dataType n) const
         {
             ensure();
@@ -1594,6 +1579,7 @@ namespace np
             }
             return result;
         }
+#endif
         void operator/=(dataType n)
         {
             ensure();
@@ -2219,30 +2205,15 @@ namespace np
                 }
                 else
                 {
-                    if (this->optimization == true)
+                    dataType sum_sq = 0;
+                    for (size_t i = 0; i < row; ++i)
                     {
-                        Numcpp<dataType> temp = *this;
-#if CUDA_DEF
-                        if (this->mem_stat == true)
+                        for (size_t j = 0; j < col; ++j)
                         {
-                            temp.to(DEVICE_CUDA);
+                            sum_sq += matrix[i][j] * matrix[i][j];
                         }
-#endif
-                        temp.Hadamard_self(*this);
-                        result = std::sqrt(temp.sum());
                     }
-                    else
-                    {
-                        dataType sum_sq = 0;
-                        for (size_t i = 0; i < row; ++i)
-                        {
-                            for (size_t j = 0; j < col; ++j)
-                            {
-                                sum_sq += matrix[i][j] * matrix[i][j];
-                            }
-                        }
-                        result = std::sqrt(sum_sq);
-                    }
+                    result = std::sqrt(sum_sq);
                 }
                 break;
 
@@ -2574,40 +2545,34 @@ namespace np
         }
     }
     template <typename T>
-    Numcpp<T>::Numcpp(const Numcpp<T> &other)
+    inline Numcpp<T>::Numcpp(const Numcpp<T> &other)
     {
-        row = other.row;
-        col = other.col;
-        optimization = other.optimization;
-        maxprocs = other.maxprocs;
-        is_destroy = false;
-#if CUDA_DEF
-        mem_stat = other.mem_stat;
-        mem_synced = other.mem_synced;
-        auto_sync = other.auto_sync;
-        MUL_GPU = other.MUL_GPU;
-        if (mem_stat == true && other.device_data != nullptr)
+        if (other.row == 0 || other.col == 0)
         {
-            if (device_data != nullptr)
+            throw std::invalid_argument("Invalid Matrix.");
+        }
+        else
+        {
+            row = other.row;
+            col = other.col;
+            matrix = new T *[row];
+            if (this->optimization == false)
             {
-                cuda_copy(other);
+                for (size_t i = 0; i < row; i++)
+                {
+                    matrix[i] = new T[col];
+                    for (size_t j = 0; j < col; j++)
+                    {
+                        matrix[i][j] = other.matrix[i][j];
+                    }
+                }
             }
             else
             {
-                cuda_alloc();
-                cuda_copy(other);
+                units::Copy_thread_worker<T>(matrix, this->row, this->col, other.matrix, this->maxprocs, [](T **a, T **b, size_t i, size_t j)
+                                             { a[i][j] = b[i][j]; });
             }
-        }
-#endif
-        // Deep copy the matrix
-        matrix = new T *[row];
-        for (size_t i = 0; i < row; i++)
-        {
-            matrix[i] = new T[col];
-            for (size_t j = 0; j < col; j++)
-            {
-                matrix[i][j] = other.matrix[i][j];
-            }
+            is_destroy = false;
         }
     }
     template <typename T>
@@ -3056,10 +3021,10 @@ namespace np
         Numcpp<T> V = AT * U * S_inv.transpose();
         return {U, S, V};
     };
-    /**
-     * @brief T** to Numcpp
-     *
-     */
+/**
+ * @brief T** to Numcpp
+ *
+ */
 #define MATtoNumcpp(mat_name, Numcpp, row, col) \
     for (size_t i = 0; i < row; i++)            \
     {                                           \

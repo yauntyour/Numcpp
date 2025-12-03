@@ -162,6 +162,17 @@ int main(int argc, char const *argv[])
         np::Numcpp<double> cov(2, 2);
         cov << 1.0, 0.8, 0.8, 1.0;
         auto multi_mat = np::multivariate_randn<double>(1000, cov);
+
+        // 向量的点积
+        Numcpp<int> v1(1, 9), v2(9, 1, 8);
+        std::cout << "Dot: " << v1.dot(v1) << std::endl;
+
+        // 范数计算
+        auto normat = np::randn<double>(16, 16);
+        std::cout << "normat: " << normat << std::endl;
+        std::cout << "normat's L1: " << normat.norm(np::L1) << std::endl;
+        std::cout << "normat's L2: " << normat.norm(np::L2) << std::endl;
+        std::cout << "normat's INF: " << normat.norm(np::INF) << std::endl;
     }
     catch (const std::exception &e)
     {
@@ -420,11 +431,6 @@ int main()
 
     // GPU加速的矩阵乘法（无优化算法）
     Numcpp<nc_t> result = n * m;
-    result.to(DEVICE_LOCAL);
-    std::cout << result;
-
-    // 同位加法
-    result = n + m;
     result.to(DEVICE_LOCAL);
     std::cout << result;
 

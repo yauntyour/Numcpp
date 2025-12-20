@@ -1051,7 +1051,7 @@ namespace np
             }
             return *this;
         }
-        void operator+=(const Numcpp<dataType> &other)
+        Numcpp<dataType> &operator+=(const Numcpp<dataType> &other)
         {
             ensure();
             if (other.row != this->row || other.col != this->col)
@@ -1098,6 +1098,7 @@ namespace np
 #endif
                 }
             }
+            return *this;
         }
 #if !CUDA_DEF
         Numcpp<dataType> operator+(const Numcpp<dataType> &other) const
@@ -1139,7 +1140,7 @@ namespace np
             }
         }
 #endif
-        void operator-=(const Numcpp<dataType> &other)
+        Numcpp<dataType> &operator-=(const Numcpp<dataType> &other)
         {
             ensure();
             if (other.row != this->row || other.col != this->col)
@@ -1186,6 +1187,7 @@ namespace np
 #endif
                 }
             }
+            return *this;
         }
 #if !CUDA_DEF
         Numcpp<dataType> operator-(const Numcpp<dataType> &other) const
@@ -1302,7 +1304,7 @@ namespace np
             return result;
         }
 #endif
-        void operator+=(dataType n)
+        Numcpp<dataType> &operator+=(dataType n)
         {
             ensure();
             if (this->optimization == false)
@@ -1341,6 +1343,7 @@ namespace np
                                                { a[i][j] += n; });
 #endif
             }
+            return *this;
         }
 #if !CUDA_DEF
         Numcpp<dataType> operator-(dataType n) const
@@ -1394,7 +1397,7 @@ namespace np
             return result;
         }
 #endif
-        void operator-=(dataType n)
+        Numcpp<dataType> &operator-=(dataType n)
         {
             ensure();
             if (this->optimization == false)
@@ -1433,6 +1436,7 @@ namespace np
                                                { a[i][j] -= n; });
 #endif
             }
+            return *this;
         }
 
 #if !CUDA_DEF
@@ -1487,7 +1491,7 @@ namespace np
             return result;
         }
 #endif
-        void operator*=(dataType n)
+        Numcpp<dataType> &operator*=(dataType n)
         {
             ensure();
             if (this->optimization == false)
@@ -1526,6 +1530,7 @@ namespace np
                                                { a[i][j] *= n; });
 #endif
             }
+            return *this;
         }
 #if !CUDA_DEF
         Numcpp<dataType> operator/(dataType n) const
@@ -1580,7 +1585,7 @@ namespace np
             return result;
         }
 #endif
-        void operator/=(dataType n)
+        Numcpp<dataType> &operator/=(dataType n)
         {
             ensure();
             assert(n != 0);
@@ -1620,6 +1625,7 @@ namespace np
                                                { a[i][j] /= n; });
 #endif
             }
+            return *this;
         }
         /*Matrix function complex*/
         /*the col of first matrix is the same as the row of second matrix*/

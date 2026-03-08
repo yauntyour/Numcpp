@@ -32,6 +32,7 @@ int main()
     Numcpp<nc_t> result = n * m;
     result.to(DEVICE_LOCAL);
     std::cout << "n * m:" << result;
+    // 注意：GPU运算产生的结果无法拷贝（Lock），因为不同的Numcpp对象无法持有同一个GPU内存
 
     // 本位减法
     n += m;

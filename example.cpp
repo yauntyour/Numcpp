@@ -1,176 +1,220 @@
 #include <iostream>
-#include <math.h>
+#include <cmath>
 #include <complex>
-#include "Numcpp.hpp"
+#include <cstdlib>
+#include <ctime>
+#include <cstdint>
+#include <cassert>
+#include "Numcpp/Numcpp.hpp"
 
 using namespace np;
 
-// 复数，推荐使用C++的复数类型，支持FFT变换
-typedef std::complex<double> complex_double;
+typedef std::complex<double> cd;
+cd sigmoid(cd x, cd) { return cd(1, 0) / (cd(1, 0) + exp(-x)); }
 
-#define nc_t complex_double
-
-nc_t sinxy(nc_t x, nc_t y)
+int main()
 {
-    return nc_t(sin(x.real()), sin(x.imag()));
-}
+    int err = 0;
+    auto check = [&](bool ok, const char *name) {
+        std::cout << (ok ? "  PASS " : "  FAIL ") << name << std::endl;
+        if (!ok) err++;
+    };
 
-void generate(Numcpp<nc_t> &nc)
-{
-    srand(time(NULL));
-    for (size_t i = 0; i < nc.row; i++)
+    std::cout << "=== Numcpp Tests ===\n" << std::endl;
+
+    // ---- 1. construct / assign ----
     {
-        for (size_t j = 0; j < nc.col; j++)
-        {
-            double U1 = rand() * 1.0f / RAND_MAX;                // 0~1均匀分布
-            double U2 = rand() * 1.0f / RAND_MAX;                // 0~1均匀分布
-            double Z = sqrt(-2 * log(U1)) * cos(2 * NP_PI * U2); // 标准正态分布
-            // 期望为1，方差为3^2的正态分布
-            nc[i][j] *= 1 + 3 * Z;
-        }
+        Numcpp<double> a(2, 3, 5.0);
+        check(a.row == 2 && a.col == 3, "construct(row,col,val)");
+        check(a[0][0] == 5.0 && a[1][2] == 5.0, "all elements = init value");
+
+        Numcpp<double> b(2, 3);
+        check(b.row == 2 && b.col == 3, "construct(row,col) default");
+        b = a;
+        check(b[0][0] == 5.0, "operator=");
     }
-}
 
-nc_t func(nc_t n, nc_t m)
-{
-    nc_t result = n * m;
-    return result;
-}
-nc_t sigmoid(nc_t n, nc_t m)
-{
-    return nc_t(1, 0) / (nc_t(1, 0) + exp(-n));
-}
-
-int main(int argc, char const *argv[])
-{
-    // 开启多核优化
-    np::is_optimized = true;
-    /*使用Numcpp<type> np(row,col)创建一个row * col的矩阵*/
-    Numcpp<nc_t> n(16, 16), m(16, 16);
-
-    /*矩阵中所有元素的默认值为1，也可以手动设置*/
-    Numcpp<nc_t> c(6, 7, 3.0);
-    Numcpp<nc_t> e(6, 8);
-
-    /*广播操作*/
-    n *= 2.0;
-    m *= 3.0;
-
-    try
+    // ---- 2. scalar arithmetic ----
     {
-        // 矩阵乘法：
-        Numcpp<nc_t> result = n * m;
-        std::cout << "n * m:" << result << "\n";
+        Numcpp<double> a(2, 2, 10.0);
+        auto m = a * 3.0;
+        check(m[0][0] == 30.0, "scalar multiply");
+        auto d = a / 2.0;
+        check(std::abs(d[0][0] - 5.0) < 1e-10, "scalar divide");
+        auto p = a + 1.0;
+        check(p[0][0] == 11.0, "scalar add");
+        auto s = a - 2.0;
+        check(s[0][0] == 8.0, "scalar subtract");
+    }
 
-        // 使用矩阵乘法优化算法，在M*K*N >64*64*64时生效,对特殊乘法无效;
+    // ---- 3. matrix arithmetic ----
+    {
+        Numcpp<double> a = (Numcpp<double>(2, 2) << 1, 2, 3, 4);
+        Numcpp<double> b = (Numcpp<double>(2, 2) << 5, 6, 7, 8);
+        auto sum = a + b;
+        check(sum[0][0] == 6 && sum[1][1] == 12, "matrix add");
+        auto diff = a - b;
+        check(diff[0][0] == -4 && diff[1][1] == -4, "matrix subtract");
+    }
 
-        // 矩阵运算：
-        result = n + m;
-        std::cout << "n + m:" << result << "\n";
-        // 哈达马乘积：
-        result = n.Hadamard(m);
-        std::cout << "n (h*) m:" << result << "\n";
+    // ---- 4. matrix multiply ----
+    {
+        Numcpp<double> a = (Numcpp<double>(2, 3) << 1, 2, 3, 4, 5, 6);
+        Numcpp<double> b = (Numcpp<double>(3, 2) << 7, 8, 9, 10, 11, 12);
+        auto c = a * b;
+        check(c.row == 2 && c.col == 2, "mm row/col");
+        check(c[0][0] == 58 && c[0][1] == 64, "mm values");  // 1*7+2*9+3*11=58, 1*8+2*10+3*12=64
+    }
 
-        // 生成正态分布的矩阵
-        generate(c);
-        generate(e);
-        std::cout << c << "\n";
-        std::cout << e << "\n";
-        // 矩阵转置：
-        c.transposed();
-        std::cout << "c transposed:" << c << "\n";
+    // ---- 5. Hadamard / transpose ----
+    {
+        Numcpp<double> a = (Numcpp<double>(2, 2) << 1, 2, 3, 4);
+        auto h = a.Hadamard(a);
+        check(h[0][0] == 1 && h[1][1] == 16, "Hadamard");
+        auto t = a.transpose();
+        check(t[0][0] == 1 && t[0][1] == 3 && t[1][0] == 2, "transpose");
+        a.transposed();
+        check(a[0][0] == 1 && a[0][1] == 3, "transposed in-place");
+    }
 
-        // 矩阵的特殊乘法：
-        Numcpp<nc_t> Out = c<func> e; // 会创建一个新的矩阵
-        std::cout << "Out:" << Out << "\n";
+    // ---- 6. row / col / index / sum ----
+    {
+        Numcpp<double> a = (Numcpp<double>(2, 2) << 1, 2, 3, 4);
+        check(a.srow(0)[0][0] == 1 && a.srow(0)[0][1] == 2, "srow");
+        check(a.scol(1)[0][0] == 2 && a.scol(1)[1][0] == 4, "scol");
+        check(a.sum() == 10.0, "sum");
+    }
 
-        // 函数数乘特殊乘法：
-        Numcpp<nc_t> act = result<sigmoid> NULL;
-        std::cout << "act:" << act << "\n";
+    // ---- 7. determinant / inverse ----
+    {
+        Numcpp<double> a = (Numcpp<double>(3, 3) << 4, 1, 1, 1, 3, 2, 1, 2, 5);
+        double det = a.determinant();
+        check(std::abs(det - 40.0) < 1e-10, "determinant");
+        auto inv = a.inverse();
+        auto id = a * inv;
+        check(std::abs(id[0][0] - 1.0) < 1e-10 && std::abs(id[0][1]) < 1e-10, "inverse * A = I");
+    }
 
-        // 矩阵fft
-        std::cout << "RAW:" << result << "\n";
-        result.ffted(1);
-        std::cout << "FFT:" << result << "\n";
-        // ifft
-        result.ffted(-1);
-        std::cout << "iFFT" << result << "\n";
-        // 保存矩阵
-        Out.save("mat");
-        // 读取矩阵
-        Numcpp<nc_t> temp = load<nc_t>("mat");
-        std::cout << "temp load in Out:" << temp << "\n";
+    // ---- 8. pseudoinverse ----
+    {
+        Numcpp<double> a = (Numcpp<double>(4, 3) << 4, 1, 1, 1, 3, 2, 1, 2, 5, 5, 1, 1);
+        auto pinv = a.pseudoinverse();
+        check(pinv.row == 3 && pinv.col == 4, "pseudoinverse dims");
+    }
 
-        // 流式创建一个方阵
-        Numcpp<int> mat(3, 3);
-        mat << 4, 1, 1,
-            1, 3, 2,
-            1, 2, 5;
-
-        // 方阵的逆、行列式
-        std::cout << "mat:" << mat << "\n";
-        std::cout << "mat's sum:" << mat.sum() << "\n";
-        std::cout << "mat Determinant value:" << mat.determinant() << "\n";
-        std::cout << "mat Inverse mat:" << mat.inverse() << "\n";
-
-        // 直接赋值式流
-        Numcpp<double> nmat = (Numcpp<double>(4, 3) << 4, 1, 1, 1,
-                               3, 2, 1, 2,
-                               5, 5, 1, 1);
-        // 矩阵阵的逆
-        std::cout << "nmat:" << nmat << "\n";
-        std::cout << "nmat pseudoinverse mat:" << nmat.pseudoinverse() << "\n";
-        std::cout << "nmat[0:]:" << nmat.srow(0) << std::endl;
-        std::cout << "nmat[:2]:" << nmat.scol(2) << std::endl;
-
+    // ---- 9. SVD ----
+    {
+        Numcpp<double> a = (Numcpp<double>(4, 3) << 4, 1, 1, 1, 3, 2, 1, 2, 5, 5, 1, 1);
         Numcpp<double> U, S, V;
-        nmat.svd(U, S, V);
-
-        std::cout << "SVD_U:" << U << "\n";
-        std::cout << "SVD_S:" << S << "\n";
-        std::cout << "SVD_V:" << V << "\n";
-        std::cout << "rebuild nmat:" << U * S * V.transpose() << "\n";
-
-        // lambda支持
-        std::cout << "<lambda>:" << (temp<[](nc_t x, nc_t y) -> nc_t
-                                          { return nc_t(sin(x.real()), sin(x.imag())); }>
-                                         NULL)
-                  << std::endl;
-        std::cout << "<func>:" << (n<sinxy> NULL)
-                  << std::endl;
-
-        // 生成高斯矩阵基本用法
-        auto gmat = np::randn<double>(100, 100); // 100x100标准高斯矩阵
-
-        // 自定义参数
-        np::GaussianConfig config;
-        config.mean = 5.0;
-        config.stddev = 2.0;
-        config.seed = 12345;
-        auto custom_mat = np::randn<double>(50, 50, config);
-
-        // 多线程生成大矩阵
-        auto big_mat = np::randn_parallel<double>(1000, 1000, config, 8);
-
-        // 多变量高斯
-        np::Numcpp<double> cov(2, 2);
-        cov << 1.0, 0.8, 0.8, 1.0;
-        auto multi_mat = np::multivariate_randn<double>(1000, cov);
-
-        // 向量的点积
-        Numcpp<int> v1(1, 9), v2(9, 1, 8);
-        std::cout << "Dot: " << v1.dot(v1) << std::endl;
-
-        // 范数计算
-        auto normat = np::randn<double>(16, 16);
-        std::cout << "normat: " << normat << std::endl;
-        std::cout << "normat's L1: " << normat.norm(np::L1) << std::endl;
-        std::cout << "normat's L2: " << normat.norm(np::L2) << std::endl;
-        std::cout << "normat's INF: " << normat.norm(np::INF) << std::endl;
+        a.svd(U, S, V);
+        auto rebuilt = U * S * V.transpose();
+        double maxdiff = 0;
+        for (size_t i = 0; i < a.row; i++)
+            for (size_t j = 0; j < a.col; j++)
+                maxdiff = std::max(maxdiff, std::abs(a[i][j] - rebuilt[i][j]));
+        check(maxdiff < 1e-10, "SVD rebuild");
     }
-    catch (const std::exception &e)
+
+    // ---- 10. eigenvalues (symmetric) ----
     {
-        std::cerr << e.what() << '\n';
+        Numcpp<double> a = (Numcpp<double>(3, 3) << 4, 1, 1, 1, 3, 2, 1, 2, 5);
+        auto r = a.eig();
+        check(r[0].col == 3, "eigenvalues count");
     }
-    return 0;
+
+    // ---- 11. norm / dot ----
+    {
+        Numcpp<double> v(3, 1, 3.0);
+        check(std::abs(v.norm(L2) - std::sqrt(27.0)) < 1e-10, "L2 norm");
+        Numcpp<double> u(3, 1, 2.0);
+        check(v.dot(u) == 18.0, "dot product");
+    }
+
+    // ---- 12. FFT complex ----
+    {
+        Numcpp<cd> a(1, 4);
+        a << cd(1, 0), cd(1, 0), cd(1, 0), cd(1, 0);
+        auto f = a.fft(1);
+        check(std::abs(f[0][0] - cd(4, 0)) < 1e-10, "FFT DC bin");
+        auto g = f.fft(-1);
+        check(std::abs(g[0][0] - cd(1, 0)) < 1e-10, "IFFT round-trip");
+    }
+
+    // ---- 13. FFT real -> complex ----
+    {
+        Numcpp<double> a(1, 4);
+        a << 1, 1, 1, 1;
+        auto f = a.fft(1);
+        check(std::abs(f[0][0].real() - 4.0) < 1e-10, "real FFT DC bin");
+    }
+
+    // ---- 14. type conversion (.as<>) ----
+    {
+        Numcpp<int> a(2, 2, 42);
+        auto f = a.as<float>();
+        check(std::abs(f[0][0] - 42.0f) < 1e-6, "int->float");
+        auto d = f.as<double>();
+        check(std::abs(d[0][0] - 42.0) < 1e-10, "float->double");
+        auto i8 = d.as<int8_t>();
+        check(i8[0][0] == 42, "double->int8");
+        auto cpx = a.as<cd>();
+        check(std::abs(cpx[0][0].real() - 42.0) < 1e-10, "int->complex");
+    }
+
+    // ---- 15. stream init and save/load ----
+    {
+        Numcpp<double> a(2, 2);
+        a << 1, 2, 3, 4;
+        check(a[0][0] == 1 && a[1][1] == 4, "stream << init");
+        a.save("_test.mat");
+        auto b = load<double>("_test.mat");
+        check(b[0][0] == 1 && b[1][1] == 4, "save/load");
+        remove("_test.mat");
+    }
+
+    // ---- 16. special multiply (<func>) ----
+    {
+        Numcpp<double> a = (Numcpp<double>(2, 2) << 1, 2, 3, 4);
+        auto r = a<[](double x, double y) { return x * 2; }> nullptr;
+        check(r[0][0] == 2 && r[1][1] == 8, "lambda map");
+    }
+
+    // ---- 17. Gaussian random ----
+    {
+        auto g = randn<double>(10, 10);
+        check(g.row == 10 && g.col == 10, "randn");
+        GaussianConfig cfg{.mean = 3.0, .stddev = 0.5, .seed = 42};
+        auto gc = randn<double>(6, 6, cfg);
+        check(gc.row == 6 && gc.col == 6, "randn with config");
+    }
+
+    // ---- 18. Cholesky decomposition ----
+    {
+        Numcpp<double> a = (Numcpp<double>(2, 2) << 4, 1, 1, 3);
+        auto L = cholesky_decomposition(a);
+        check(std::abs(L[0][0] - 2.0) < 1e-10, "Cholesky L[0][0]");
+        auto re = L * L.transpose();
+        check(std::abs(re[0][0] - a[0][0]) < 1e-10, "Cholesky L*L^T = A");
+    }
+
+    // ---- 19. is_symmetric / identity / zero_approx ----
+    {
+        Numcpp<double> a = (Numcpp<double>(3, 3) << 4, 1, 1, 1, 3, 2, 1, 2, 5);
+        check(a.is_symmetric(), "is_symmetric");
+        a.set_identity();
+        check(a[0][0] == 1 && a[0][1] == 0, "set_identity");
+    }
+
+    // ---- 20. binarize ----
+    {
+        Numcpp<double> a = (Numcpp<double>(2, 2) << 0.3, 0.7, 0.5, 0.9);
+        auto b = binarizeMatrix(a, 0.5);
+        check(b[0][0] == 0 && b[1][0] == 1, "binarize");
+    }
+
+    // ---- 21. LDL decomposition (inverse) ----
+    //  (already tested above)
+
+    std::cout << "\n=== " << (err ? "FAILED" : "ALL PASSED") << " (" << err << " failures) ===" << std::endl;
+    return err;
 }

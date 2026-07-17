@@ -1,11 +1,15 @@
 #include <iostream>
+#include <iomanip>
 #include <cmath>
 #include <complex>
 #include <cstdlib>
 #include <ctime>
 #include <cstdint>
 #include <cassert>
+#include <chrono>
+#include <string>
 #include "Numcpp/Numcpp.hpp"
+#include "Numcpp/algos/algos.hpp"
 
 using namespace np;
 
@@ -214,6 +218,243 @@ int main()
 
     // ---- 21. LDL decomposition (inverse) ----
     //  (already tested above)
+
+    // ==================== Performance Benchmark ====================
+    {
+        using Clock = std::chrono::high_resolution_clock;
+        using Ms = std::chrono::milliseconds;
+        const unsigned int cores = std::thread::hardware_concurrency();
+        const unsigned int threads4 = std::min(4u, cores);
+        const int N_elem = 1500;
+        const int N_mmul = 400;
+        const int N_iters = 3;
+
+        std::cout << "\n=== Performance Benchmark (CPU cores: " << cores
+                  << ", matrix sizes: " << N_elem << "x" << N_elem << " / " << N_mmul << "x" << N_mmul << ") ===\n"
+                  << std::endl;
+
+        struct Entry {
+            std::string name;
+            double single;
+            double t4;
+            double t4_sp;
+            double tmax;
+            double tmax_sp;
+        };
+        std::vector<Entry> entries;
+
+        auto timeit = [&](std::function<void()> fn) {
+            auto t0 = Clock::now();
+            for (int r = 0; r < N_iters; r++) fn();
+            return (double)std::chrono::duration_cast<Ms>(Clock::now() - t0).count() / N_iters;
+        };
+
+        auto add_bench = [&](const std::string &name,
+                             std::function<void()> single,
+                             std::function<void(unsigned)> multi) {
+            double s = timeit(single);
+            double t4 = timeit([&] { multi(threads4); });
+            double tm = timeit([&] { multi(cores); });
+            entries.push_back({name, s, t4, s / t4, tm, s / tm});
+        };
+
+        // 1. construct
+        add_bench("construct(row,col,val)",
+            [&] { Numcpp<double> a(N_elem, N_elem, 1.0); },
+            [&](unsigned th) {
+                Numcpp<double> a(N_elem, N_elem, 1.0);
+                a.optimized(true); a.maxprocs_set(th);
+            });
+
+        // 2. operator+=
+        add_bench("operator+=",
+            [&] {
+                Numcpp<double> a(N_elem, N_elem, 2.0), b(N_elem, N_elem, 3.0);
+                a += b;
+            },
+            [&](unsigned th) {
+                Numcpp<double> a(N_elem, N_elem, 2.0), b(N_elem, N_elem, 3.0);
+                a.optimized(true); a.maxprocs_set(th);
+                b.optimized(true); b.maxprocs_set(th);
+                a += b;
+            });
+
+        // 3. operator*=
+        add_bench("operator*=",
+            [&] { Numcpp<double> a(N_elem, N_elem, 2.0); a *= 3.0; },
+            [&](unsigned th) {
+                Numcpp<double> a(N_elem, N_elem, 2.0);
+                a.optimized(true); a.maxprocs_set(th); a *= 3.0;
+            });
+
+        // 4. Hadamard
+        add_bench("Hadamard",
+            [&] {
+                Numcpp<double> a(N_elem, N_elem, 2.0), b(N_elem, N_elem, 3.0);
+                a.Hadamard_self(b);
+            },
+            [&](unsigned th) {
+                Numcpp<double> a(N_elem, N_elem, 2.0), b(N_elem, N_elem, 3.0);
+                a.optimized(true); a.maxprocs_set(th);
+                a.Hadamard_self(b);
+            });
+
+        // 5. transpose
+        add_bench("transpose",
+            [&] {
+                Numcpp<double> a(N_elem, N_elem, 1.0);
+                for (size_t i = 0; i < a.row; i++)
+                    for (size_t j = 0; j < a.col; j++)
+                        a[i][j] = (double)(i * a.col + j);
+                auto t = a.transpose();
+            },
+            [&](unsigned th) {
+                Numcpp<double> a(N_elem, N_elem, 1.0);
+                a.optimized(true); a.maxprocs_set(th);
+                for (size_t i = 0; i < a.row; i++)
+                    for (size_t j = 0; j < a.col; j++)
+                        a[i][j] = (double)(i * a.col + j);
+                auto t = a.transpose();
+            });
+
+        // 6. matrix multiply
+        add_bench("A * B (mmul)",
+            [&] {
+                Numcpp<double> a(N_mmul, N_mmul, 1.0), b(N_mmul, N_mmul, 2.0);
+                auto c = a * b;
+            },
+            [&](unsigned th) {
+                Numcpp<double> a(N_mmul, N_mmul, 1.0), b(N_mmul, N_mmul, 2.0);
+                a.optimized(true); a.maxprocs_set(th);
+                b.optimized(true); b.maxprocs_set(th);
+                auto c = a * b;
+            });
+
+        // 7. copy construct
+        add_bench("copy construct",
+            [&] {
+                Numcpp<double> a(N_elem, N_elem, 1.0);
+                Numcpp<double> b(a);
+            },
+            [&](unsigned th) {
+                Numcpp<double> a(N_elem, N_elem, 1.0);
+                a.optimized(true); a.maxprocs_set(th);
+                Numcpp<double> b(a);
+            });
+
+        // 8. sum
+        add_bench("sum",
+            [&] {
+                Numcpp<double> a(N_elem, N_elem, 1.0);
+                volatile double s = a.sum(); (void)s;
+            },
+            [&](unsigned th) {
+                Numcpp<double> a(N_elem, N_elem, 1.0);
+                a.optimized(true); a.maxprocs_set(th);
+                volatile double s = a.sum(); (void)s;
+            });
+
+        // ---- Print table ----
+        std::cout << std::left
+                  << std::setw(24) << "Operation"
+                  << std::setw(10) << "1-core"
+                  << std::setw(10) << "4-core"
+                  << std::setw(7)  << "x"
+                  << std::setw(10) << std::to_string(cores) + "-core"
+                  << std::setw(7)  << "x" << std::endl;
+        std::cout << std::string(68, '-') << std::endl;
+
+        for (auto &e : entries)
+        {
+            std::cout << std::left << std::fixed << std::setprecision(1)
+                      << std::setw(24) << e.name
+                      << std::setw(10) << e.single + 0.05
+                      << std::setw(10) << e.t4 + 0.05
+                      << std::setw(6)  << std::setprecision(2) << e.t4_sp << "x"
+                      << std::setw(10) << std::setprecision(1) << e.tmax + 0.05
+                      << std::setw(6)  << std::setprecision(2) << e.tmax_sp << "x"
+                      << std::endl;
+        }
+    }
+
+    // ==================== Algorithm Comparison: Naive vs CW vs Blocked vs Parallel ====================
+    {
+        using Clock = std::chrono::high_resolution_clock;
+        using Us = std::chrono::microseconds;
+        const unsigned int th = std::thread::hardware_concurrency();
+
+        std::cout << "\n=== Algorithm Comparison (square NxN power-of-2, " << th << " threads) ===\n"
+                  << "    times in us, block size = 64\n" << std::endl;
+
+        std::cout << std::left
+                  << std::setw(8)  << "N"
+                  << std::setw(12) << "Naive"
+                  << std::setw(12) << "CW"
+                  << std::setw(12) << "Blk-serial"
+                  << std::setw(12) << "Blk-par"
+                  << std::setw(10) << "CW/Nai"
+                  << std::setw(10) << "Blk/Nai"
+                  << std::setw(10) << "BPar/Nai"
+                  << std::endl;
+        std::cout << std::string(86, '-') << std::endl;
+
+        for (int N : {64, 128, 256, 512, 1024})
+        {
+            Numcpp<double> A(N, N), B(N, N);
+            for (size_t i = 0; i < A.row; i++)
+                for (size_t j = 0; j < A.col; j++)
+                {
+                    A[i][j] = (double)((i * 37 + j * 53) % 100) / 10.0;
+                    B[i][j] = (double)((i * 71 + j * 13) % 100) / 10.0;
+                }
+
+            auto timeit = [&](auto &&fn) {
+                fn(); // warm up
+                auto t0 = Clock::now();
+                fn();
+                return (double)std::chrono::duration_cast<Us>(Clock::now() - t0).count();
+            };
+
+            double t_naive = 0, t_cw = 0, t_blk = 0, t_blk_par = 0;
+
+            if (N <= 512) {
+                t_naive = timeit([&] {
+                    Numcpp<double> R(N, N, 0.0);
+                    units::mm_generate(A.matrix, B.matrix, R.matrix, N, N, N, N, 0, 0, 0, 0);
+                });
+
+                t_cw = timeit([&] {
+                    auto C = cw_multiply(A, B);
+                });
+            } else {
+                t_naive = timeit([&] {
+                    auto C = A * B;
+                });
+                t_cw = 0; // CW too slow for 1024, skip
+            }
+
+            t_blk = timeit([&] {
+                auto C = blocked_multiply(A, B, 64, 0);
+            });
+
+            t_blk_par = timeit([&] {
+                auto C = blocked_multiply(A, B, 64, th);
+            });
+
+            std::cout << std::left << std::fixed
+                      << std::setw(8)  << N
+                      << std::setprecision(0)
+                      << std::setw(12) << t_naive
+                      << std::setw(12) << (t_cw > 0 ? std::to_string((long long)t_cw) : "  --")
+                      << std::setw(12) << t_blk
+                      << std::setw(12) << t_blk_par
+                      << std::setprecision(2)
+                      << std::setw(10) << (t_cw > 0 ? std::to_string(t_naive / t_cw).substr(0,4) + "x" : "  --")
+                      << std::setw(10) << (t_naive / t_blk) << "x"
+                      << std::setw(10) << (t_naive / t_blk_par) << "x"
+                      << std::endl;
+        }
+    }
 
     std::cout << "\n=== " << (err ? "FAILED" : "ALL PASSED") << " (" << err << " failures) ===" << std::endl;
     return err;

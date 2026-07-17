@@ -7,6 +7,10 @@
 #include <cmath>
 #include <iostream>
 #include <thread>
+#include <future>
+#include <mutex>
+#include <condition_variable>
+#include <queue>
 #include <functional>
 #include <type_traits>
 #include <complex>
@@ -92,182 +96,112 @@ namespace units
                                      other_matrix[k + B_row_offset][j + B_col_offset]);
     }
 
-    template <typename T>
-    T **mat_create(size_t row, size_t col)
+    class CompletionBarrier
     {
-        T **matrix = new T *[row];
-        for (size_t i = 0; i < row; i++)
+    public:
+        CompletionBarrier(size_t n) : count(n) {}
+        void arrive()
         {
-            matrix[i] = new T[col];
-            for (size_t j = 0; j < col; j++) { matrix[i][j] = (T)0; }
+            if (--count == 0)
+            {
+                std::lock_guard<std::mutex> lk(mtx);
+                cv.notify_one();
+            }
         }
-        return matrix;
-    }
-
-    template <typename T>
-    void mat_delete(T **mat, size_t row)
-    {
-        for (size_t i = 0; i < row; i++) { delete[] mat[i]; }
-        delete[] mat;
-    }
-
-    template <typename T>
-    void mm_Coppersmith_Winograd(T **this_matrix, T **other_matrix, T **result,
-                                 const size_t A_row, const size_t B_row, const size_t A_col, const size_t B_col,
-                                 const size_t A_row_offset, const size_t A_col_offset,
-                                 const size_t B_row_offset, const size_t B_col_offset)
-    {
-        if ((A_row <= 2) || (A_row % 2 != 0 || B_col % 2 != 0 || A_col % 2 != 0))
-            return mm_generate(this_matrix, other_matrix, result,
-                               A_row, B_col, A_col, B_col,
-                               A_row_offset, A_col_offset, B_row_offset, B_col_offset);
-
-        size_t halfAR = A_row / 2, halfAC = A_col / 2, halfBR = B_row / 2, halfBC = B_col / 2;
-
-        T **S1 = mat_create<T>(halfAR, halfAC);
-        T **S2 = mat_create<T>(halfAR, halfAC);
-        T **S3 = mat_create<T>(halfAR, halfAC);
-        T **S4 = mat_create<T>(halfAR, halfAC);
-        for (size_t i = 0; i < halfAR; i++)
-            for (size_t j = 0; j < halfAC; j++)
-            {
-                S1[i][j] = this_matrix[halfAR + i + A_row_offset][halfAC + j + A_col_offset] +
-                           this_matrix[halfAR + i + A_row_offset][halfAC + j + A_col_offset];
-                S2[i][j] = S1[i][j] - this_matrix[i + A_row_offset][j + A_col_offset];
-                S3[i][j] = this_matrix[i + A_row_offset][j + A_col_offset] -
-                           this_matrix[halfAR + i + A_row_offset][halfAC + j + A_col_offset];
-                S4[i][j] = this_matrix[i + A_row_offset][halfAC + j + A_col_offset] - S2[i][j];
-            }
-
-        T **T1 = mat_create<T>(halfBR, halfBC);
-        T **T2 = mat_create<T>(halfBR, halfBC);
-        T **T3 = mat_create<T>(halfBR, halfBC);
-        T **T4 = mat_create<T>(halfBR, halfBC);
-        for (size_t i = 0; i < halfBR; i++)
-            for (size_t j = 0; j < halfBC; j++)
-            {
-                T1[i][j] = other_matrix[i + B_row_offset][halfBC + j + B_col_offset] -
-                           other_matrix[i + B_row_offset][j + B_col_offset];
-                T2[i][j] = other_matrix[halfBR + i + B_row_offset][halfBC + j + B_col_offset] - T1[i][j];
-                T3[i][j] = other_matrix[halfBR + i + B_row_offset][halfBC + j + B_col_offset] -
-                           other_matrix[i + B_row_offset][halfBC + j + B_col_offset];
-                T4[i][j] = T2[i][j] - other_matrix[halfBR + i + B_row_offset][j + B_col_offset];
-            }
-
-        T **M1 = mat_create<T>(halfAR, halfBC);
-        mm_Coppersmith_Winograd(this_matrix, other_matrix, M1, halfAR, halfBR, halfAC, halfBC, 0, 0, 0, 0);
-        T **M2 = mat_create<T>(halfAR, halfBC);
-        mm_Coppersmith_Winograd(this_matrix, other_matrix, M2, halfAR, halfBR, halfAC, halfBC, 0, halfAC, 0, 0);
-        T **M3 = mat_create<T>(halfAR, halfBC);
-        mm_Coppersmith_Winograd(S4, other_matrix, M3, halfAR, halfBR, halfAC, halfBC, 0, 0, halfAC, halfBC);
-        T **M4 = mat_create<T>(halfAR, halfBC);
-        mm_Coppersmith_Winograd(this_matrix, T4, M4, halfAR, halfBR, halfAC, halfBC, halfAR, halfAC, 0, 0);
-        T **M5 = mat_create<T>(halfAR, halfBC);
-        mm_Coppersmith_Winograd(S1, T1, M5, halfAR, halfBR, halfAC, halfBC, 0, 0, 0, 0);
-        T **M6 = mat_create<T>(halfAR, halfBC);
-        mm_Coppersmith_Winograd(S2, T2, M6, halfAR, halfBR, halfAC, halfBC, 0, 0, 0, 0);
-        T **M7 = mat_create<T>(halfAR, halfBC);
-        mm_Coppersmith_Winograd(S3, T3, M7, halfAR, halfBR, halfAC, halfBC, 0, 0, 0, 0);
-
-        for (size_t i = 0; i < halfAR; i++)
-            for (size_t j = 0; j < halfBC; j++)
-            {
-                result[i][j] = M1[i][j] + M2[i][j];
-                result[i][halfBC + j] = M1[i][j] + M6[i][j] + M5[i][j] + M3[i][j];
-                result[halfAR + i][j] = M1[i][j] + M6[i][j] + M7[i][j] - M4[i][j];
-                result[halfAR + i][halfBC + j] = M1[i][j] + M6[i][j] + M7[i][j] + M5[i][j];
-            }
-
-        mat_delete<T>(S1, halfAR); mat_delete<T>(S2, halfAR);
-        mat_delete<T>(S3, halfAR); mat_delete<T>(S4, halfAR);
-        mat_delete<T>(T1, halfBR); mat_delete<T>(T2, halfBR);
-        mat_delete<T>(T3, halfBR); mat_delete<T>(T4, halfBR);
-        mat_delete<T>(M1, halfAR); mat_delete<T>(M2, halfAR);
-        mat_delete<T>(M3, halfAR); mat_delete<T>(M4, halfAR);
-        mat_delete<T>(M5, halfAR); mat_delete<T>(M6, halfAR);
-        mat_delete<T>(M7, halfAR);
-    }
-
-    template <typename T>
-    void mm_auto(T **this_matrix, T **other_matrix, T **result,
-                 const size_t A_row, const size_t B_row, const size_t A_col, const size_t B_col, const bool fast_flag)
-    {
-        if ((A_row * B_col * A_col <= 64 * 64 * 64) || (A_row % 2 != 0 || B_col % 2 != 0 || A_col % 2 != 0))
-            return mm_generate(this_matrix, other_matrix, result, A_row, B_row, A_col, B_col, 0, 0, 0, 0);
-        else if (fast_flag)
-            return mm_Coppersmith_Winograd(this_matrix, other_matrix, result, A_row, B_row, A_col, B_col, 0, 0, 0, 0);
-        else
-            throw std::invalid_argument("Matrix too large, use multicore or enable Coppersmith-Winograd.");
-    }
-
-    template <typename T>
-    void atomic_opalloc(T **a, size_t offset_i, size_t offset_j, size_t black_len_i, size_t black_len_j,
-                        size_t *sign, std::function<void(T **, size_t, size_t)> opalloc)
-    {
-        for (size_t i = 0; i < black_len_i; i++)
+        void wait()
         {
-            a[offset_i + i] = new T[black_len_j];
-            for (size_t j = 0; j < black_len_j; j++) { opalloc(a, offset_i + i, offset_j + j); }
+            std::unique_lock<std::mutex> lk(mtx);
+            cv.wait(lk, [this] { return count == 0; });
         }
-        *sign += black_len_i * black_len_j;
-    }
+    private:
+        std::atomic<size_t> count;
+        std::mutex mtx;
+        std::condition_variable cv;
+    };
 
-    template <typename T>
-    void atomic_opcopy(T **a, T **b, size_t offset_i, size_t offset_j, size_t black_len_i, size_t black_len_j,
-                       size_t *sign, std::function<void(T **, T **, size_t, size_t)> opcopy)
+    class ThreadPool
     {
-        for (size_t i = 0; i < black_len_i; i++)
+    public:
+        ~ThreadPool()
         {
-            a[offset_i + i] = new T[black_len_j];
-            for (size_t j = 0; j < black_len_j; j++) { opcopy(a, b, offset_i + i, offset_j + j); }
+            {
+                std::lock_guard<std::mutex> lock(queue_mutex);
+                stop = true;
+            }
+            condition.notify_all();
+            for (auto &w : workers)
+                if (w.joinable()) w.join();
         }
-        *sign += black_len_i * black_len_j;
-    }
 
-    template <typename T>
-    void atomic_op(T **a, size_t offset_i, size_t offset_j, size_t black_len_i, size_t black_len_j,
-                   size_t *sign, std::function<void(T **, size_t, size_t)> opA)
-    {
-        for (size_t i = 0; i < black_len_i; i++)
-            for (size_t j = 0; j < black_len_j; j++) { opA(a, offset_i + i, offset_j + j); }
-        *sign += black_len_i * black_len_j;
-    }
+        void ensure(size_t n)
+        {
+            std::lock_guard<std::mutex> lock(queue_mutex);
+            while (workers.size() < n)
+            {
+                workers.emplace_back([this] {
+                    while (true)
+                    {
+                        std::function<void()> task;
+                        {
+                            std::unique_lock<std::mutex> lock(queue_mutex);
+                            condition.wait(lock, [this] { return stop || !tasks.empty(); });
+                            if (stop && tasks.empty()) return;
+                            task = std::move(tasks.front());
+                            tasks.pop();
+                        }
+                        task();
+                    }
+                });
+            }
+        }
 
-    template <typename T>
-    void atomic_op(T **a, T **b, size_t offset_i, size_t offset_j, size_t black_len_i, size_t black_len_j,
-                   size_t *sign, std::function<void(T **, T **, size_t, size_t)> opAB)
-    {
-        for (size_t i = 0; i < black_len_i; i++)
-            for (size_t j = 0; j < black_len_j; j++) { opAB(a, b, offset_i + i, offset_j + j); }
-        *sign += black_len_i * black_len_j;
-    }
+        void enqueue(std::function<void()> task)
+        {
+            {
+                std::lock_guard<std::mutex> lock(queue_mutex);
+                tasks.push(std::move(task));
+            }
+            condition.notify_one();
+        }
 
-    template <typename T>
-    void atomic_op(T **a, T **b, T **c, size_t offset_i, size_t offset_j, size_t black_len_i, size_t black_len_j,
-                   size_t *sign, std::function<void(T **, T **, T **, size_t, size_t)> opABC)
+    private:
+        std::vector<std::thread> workers;
+        std::queue<std::function<void()>> tasks;
+        std::mutex queue_mutex;
+        std::condition_variable condition;
+        bool stop = false;
+    };
+
+    inline ThreadPool &pool()
     {
-        for (size_t i = 0; i < black_len_i; i++)
-            for (size_t j = 0; j < black_len_j; j++) { opABC(a, b, c, offset_i + i, offset_j + j); }
-        *sign += black_len_i * black_len_j;
+        static ThreadPool instance;
+        return instance;
     }
 
     template <typename T>
     int Alloc_thread_worker(T **a, size_t a_row, size_t a_col, size_t cpu_thread_max,
                             std::function<void(T **, size_t, size_t)> opA)
     {
-        size_t mat_n = static_cast<size_t>(std::sqrt(static_cast<double>(cpu_thread_max)));
-        std::thread *t_list = new std::thread[cpu_thread_max];
-        size_t black_len_i = a_row / mat_n, black_len_j = a_col / mat_n, sign = 0;
-        for (size_t i = 0; i < mat_n; i++)
-            for (size_t j = 0; j < mat_n; j++)
-            {
-                t_list[i * mat_n + j] = std::thread([=, &sign]() {
-                    atomic_opalloc<T>(a, i * black_len_i, j * black_len_j, black_len_i, black_len_j, &sign, opA);
-                });
-                t_list[i * mat_n + j].detach();
-            }
-        while (sign < a_row * a_col) { std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
-        delete[] t_list;
+        pool().ensure(cpu_thread_max);
+        size_t chunk = (a_row + cpu_thread_max - 1) / cpu_thread_max;
+        size_t n_chunks = (a_row + chunk - 1) / chunk;
+        if (n_chunks == 0) return 0;
+        CompletionBarrier barrier(n_chunks);
+        for (size_t t = 0; t < n_chunks; t++)
+        {
+            size_t start = t * chunk;
+            size_t end = std::min(start + chunk, a_row);
+            pool().enqueue([&, start, end]() {
+                for (size_t i = start; i < end; i++)
+                {
+                    a[i] = new T[a_col];
+                    for (size_t j = 0; j < a_col; j++)
+                        opA(a, i, j);
+                }
+                barrier.arrive();
+            });
+        }
+        barrier.wait();
         return 0;
     }
 
@@ -275,19 +209,27 @@ namespace units
     int thread_worker(T **a, size_t a_row, size_t a_col, size_t cpu_thread_max,
                       std::function<void(T **, size_t, size_t)> opA)
     {
-        size_t mat_n = static_cast<size_t>(std::sqrt(static_cast<double>(cpu_thread_max)));
-        std::thread *t_list = new std::thread[cpu_thread_max];
-        size_t black_len_i = a_row / mat_n, black_len_j = a_col / mat_n, sign = 0;
-        for (size_t i = 0; i < mat_n; i++)
-            for (size_t j = 0; j < mat_n; j++)
-            {
-                t_list[i * mat_n + j] = std::thread([=, &sign]() {
-                    atomic_op<T>(a, i * black_len_i, j * black_len_j, black_len_i, black_len_j, &sign, opA);
-                });
-                t_list[i * mat_n + j].detach();
-            }
-        while (sign < a_row * a_col) { std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
-        delete[] t_list;
+        pool().ensure(cpu_thread_max);
+        size_t total = a_row * a_col;
+        size_t chunk = (total + cpu_thread_max - 1) / cpu_thread_max;
+        size_t n_chunks = (total + chunk - 1) / chunk;
+        if (n_chunks == 0) return 0;
+        CompletionBarrier barrier(n_chunks);
+        for (size_t t = 0; t < n_chunks; t++)
+        {
+            size_t start = t * chunk;
+            size_t end = std::min(start + chunk, total);
+            pool().enqueue([&, start, end]() {
+                for (size_t k = start; k < end; k++)
+                {
+                    size_t i = k / a_col;
+                    size_t j = k % a_col;
+                    opA(a, i, j);
+                }
+                barrier.arrive();
+            });
+        }
+        barrier.wait();
         return 0;
     }
 
@@ -295,19 +237,26 @@ namespace units
     int Copy_thread_worker(T **a, size_t a_row, size_t a_col, T **b, size_t cpu_thread_max,
                            std::function<void(T **, T **, size_t, size_t)> opAB)
     {
-        size_t mat_n = static_cast<size_t>(std::sqrt(static_cast<double>(cpu_thread_max)));
-        std::thread *t_list = new std::thread[cpu_thread_max];
-        size_t black_len_i = a_row / mat_n, black_len_j = a_col / mat_n, sign = 0;
-        for (size_t i = 0; i < mat_n; i++)
-            for (size_t j = 0; j < mat_n; j++)
-            {
-                t_list[i * mat_n + j] = std::thread([=, &sign]() {
-                    atomic_opcopy<T>(a, b, i * black_len_i, j * black_len_j, black_len_i, black_len_j, &sign, opAB);
-                });
-                t_list[i * mat_n + j].detach();
-            }
-        while (sign < a_row * a_col) { std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
-        delete[] t_list;
+        pool().ensure(cpu_thread_max);
+        size_t chunk = (a_row + cpu_thread_max - 1) / cpu_thread_max;
+        size_t n_chunks = (a_row + chunk - 1) / chunk;
+        if (n_chunks == 0) return 0;
+        CompletionBarrier barrier(n_chunks);
+        for (size_t t = 0; t < n_chunks; t++)
+        {
+            size_t start = t * chunk;
+            size_t end = std::min(start + chunk, a_row);
+            pool().enqueue([&, start, end]() {
+                for (size_t i = start; i < end; i++)
+                {
+                    a[i] = new T[a_col];
+                    for (size_t j = 0; j < a_col; j++)
+                        opAB(a, b, i, j);
+                }
+                barrier.arrive();
+            });
+        }
+        barrier.wait();
         return 0;
     }
 
@@ -315,19 +264,27 @@ namespace units
     int thread_worker(T **a, size_t a_row, size_t a_col, T **b, size_t cpu_thread_max,
                       std::function<void(T **, T **, size_t, size_t)> opAB)
     {
-        size_t mat_n = static_cast<size_t>(std::sqrt(static_cast<double>(cpu_thread_max)));
-        std::thread *t_list = new std::thread[cpu_thread_max];
-        size_t black_len_i = a_row / mat_n, black_len_j = a_col / mat_n, sign = 0;
-        for (size_t i = 0; i < mat_n; i++)
-            for (size_t j = 0; j < mat_n; j++)
-            {
-                t_list[i * mat_n + j] = std::thread([=, &sign]() {
-                    atomic_op<T>(a, b, i * black_len_i, j * black_len_j, black_len_i, black_len_j, &sign, opAB);
-                });
-                t_list[i * mat_n + j].detach();
-            }
-        while (sign < a_row * a_col) { std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
-        delete[] t_list;
+        pool().ensure(cpu_thread_max);
+        size_t total = a_row * a_col;
+        size_t chunk = (total + cpu_thread_max - 1) / cpu_thread_max;
+        size_t n_chunks = (total + chunk - 1) / chunk;
+        if (n_chunks == 0) return 0;
+        CompletionBarrier barrier(n_chunks);
+        for (size_t t = 0; t < n_chunks; t++)
+        {
+            size_t start = t * chunk;
+            size_t end = std::min(start + chunk, total);
+            pool().enqueue([&, start, end]() {
+                for (size_t k = start; k < end; k++)
+                {
+                    size_t i = k / a_col;
+                    size_t j = k % a_col;
+                    opAB(a, b, i, j);
+                }
+                barrier.arrive();
+            });
+        }
+        barrier.wait();
         return 0;
     }
 
@@ -335,19 +292,27 @@ namespace units
     int thread_worker(T **a, size_t a_row, size_t a_col, T **b, T **c, size_t cpu_thread_max,
                       std::function<void(T **, T **, T **, size_t, size_t)> opABC)
     {
-        size_t mat_n = static_cast<size_t>(std::sqrt(static_cast<double>(cpu_thread_max)));
-        std::thread *t_list = new std::thread[cpu_thread_max];
-        size_t black_len_i = a_row / mat_n, black_len_j = a_col / mat_n, sign = 0;
-        for (size_t i = 0; i < mat_n; i++)
-            for (size_t j = 0; j < mat_n; j++)
-            {
-                t_list[i * mat_n + j] = std::thread([=, &sign]() {
-                    atomic_op<T>(a, b, c, i * black_len_i, j * black_len_j, black_len_i, black_len_j, &sign, opABC);
-                });
-                t_list[i * mat_n + j].detach();
-            }
-        while (sign < a_row * a_col) { std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
-        delete[] t_list;
+        pool().ensure(cpu_thread_max);
+        size_t total = a_row * a_col;
+        size_t chunk = (total + cpu_thread_max - 1) / cpu_thread_max;
+        size_t n_chunks = (total + chunk - 1) / chunk;
+        if (n_chunks == 0) return 0;
+        CompletionBarrier barrier(n_chunks);
+        for (size_t t = 0; t < n_chunks; t++)
+        {
+            size_t start = t * chunk;
+            size_t end = std::min(start + chunk, total);
+            pool().enqueue([&, start, end]() {
+                for (size_t k = start; k < end; k++)
+                {
+                    size_t i = k / a_col;
+                    size_t j = k % a_col;
+                    opABC(a, b, c, i, j);
+                }
+                barrier.arrive();
+            });
+        }
+        barrier.wait();
         return 0;
     }
 
@@ -482,7 +447,7 @@ namespace np
         void optimized(bool flag) { this->optimization = flag; }
         void maxprocs_set(size_t thread_num)
         {
-            if (std::sqrt(static_cast<double>(thread_num)) * std::sqrt(static_cast<double>(thread_num)) > std::thread::hardware_concurrency() || thread_num < 1)
+            if (thread_num > std::thread::hardware_concurrency() || thread_num < 1)
                 throw std::invalid_argument("Invalid maxprocs.");
             this->maxprocs = thread_num;
         }
@@ -796,14 +761,7 @@ namespace np
         {
             for (size_t i = 0; i < this->row; i++)
             {
-                if constexpr (is_numcpp_v<T>)
-                {
-                    for (size_t j = 0; j < this->col; j++) { matrix[i][j].~T(); }
-                }
-                else
-                {
-                    delete[] matrix[i];
-                }
+                delete[] matrix[i];
                 matrix[i] = nullptr;
             }
             delete[] matrix;
@@ -821,11 +779,7 @@ namespace np
             {
                 for (size_t i = 0; i < this->row; i++)
                 {
-                    if constexpr (is_numcpp_v<T>)
-                    {
-                        for (size_t j = 0; j < this->col; j++) { matrix[i][j].~T(); }
-                    }
-                    else { delete[] matrix[i]; }
+                    delete[] matrix[i];
                     matrix[i] = nullptr;
                 }
                 delete[] matrix;
@@ -1114,8 +1068,31 @@ namespace np
         }
         if (this->optimization == true)
         {
-            units::mm_auto(this->matrix, other.matrix, result.matrix,
-                           this->row, other.row, this->col, other.col, true);
+            size_t num_threads = this->maxprocs;
+            units::pool().ensure(num_threads);
+            size_t total = result.row * result.col;
+            size_t chunk = (total + num_threads - 1) / num_threads;
+            size_t n_chunks = (total + chunk - 1) / chunk;
+            if (n_chunks > 0)
+            {
+                units::CompletionBarrier barrier(n_chunks);
+                for (size_t t = 0; t < n_chunks; t++)
+                {
+                    size_t start = t * chunk;
+                    size_t end = std::min(start + chunk, total);
+                    units::pool().enqueue([this, &other, &result, start, end, &barrier]() {
+                        for (size_t k = start; k < end; k++)
+                        {
+                            size_t i = k / result.col;
+                            size_t j = k % result.col;
+                            for (size_t kk = 0; kk < this->col; kk++)
+                                result.matrix[i][j] += this->matrix[i][kk] * other.matrix[kk][j];
+                        }
+                        barrier.arrive();
+                    });
+                }
+                barrier.wait();
+            }
         }
         else
         {
@@ -1147,11 +1124,7 @@ namespace np
         }
         for (size_t i = 0; i < this->row; i++)
         {
-            if constexpr (is_numcpp_v<T>)
-            {
-                for (size_t j = 0; j < this->col; j++) { matrix[i][j].~T(); }
-            }
-            else { delete[] matrix[i]; }
+            delete[] matrix[i];
             matrix[i] = nullptr;
         }
         delete[] matrix;
@@ -1224,9 +1197,41 @@ namespace np
         }
         else
         {
-            T *p = &sum_value;
-            units::thread_worker<T>(this->matrix, this->row, this->col, this->maxprocs,
-                [p](T **a, size_t i, size_t j) { (*p) += a[i][j]; });
+            size_t num_threads = this->maxprocs;
+            units::pool().ensure(num_threads);
+            size_t total = row * col;
+            size_t chunk = (total + num_threads - 1) / num_threads;
+            size_t n_chunks = (total + chunk - 1) / chunk;
+            if (n_chunks == 0) return sum_value;
+            std::vector<T> partials(n_chunks, static_cast<T>(0));
+            units::CompletionBarrier barrier(n_chunks);
+            for (size_t t = 0; t < n_chunks; t++)
+            {
+                size_t start = t * chunk;
+                size_t end = std::min(start + chunk, total);
+                units::pool().enqueue([this, &partials, t, start, end, &barrier]() {
+                    T local = static_cast<T>(0);
+                    for (size_t k = start; k < end; k++)
+                    {
+                        size_t i = k / col;
+                        size_t j = k % col;
+                        if constexpr (is_numcpp_v<T>)
+                            local = local + matrix[i][j];
+                        else
+                            local += matrix[i][j];
+                    }
+                    partials[t] = local;
+                    barrier.arrive();
+                });
+            }
+            barrier.wait();
+            for (size_t t = 0; t < n_chunks; t++)
+            {
+                if constexpr (is_numcpp_v<T>)
+                    sum_value = sum_value + partials[t];
+                else
+                    sum_value += partials[t];
+            }
         }
         return sum_value;
     }

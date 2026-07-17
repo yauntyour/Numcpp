@@ -1,761 +1,334 @@
-# Numcpp —— 基于原生 C++ 的通用矩阵库 (Header-Only)
+# Numcpp
 
-原生 C++ 矩阵类封装，header-only 结构，零依赖（核心），无需安装。
+A header-only, template-based C++ linear algebra and matrix computation library.
 
-## 快速开始
+## Features
+
+- **Header-only** — `#include "Numcpp/Numcpp.hpp"` and you're ready
+- **Template-based** — supports `float`, `double`, `int`, `std::complex`, and custom types
+- **Multi-threading** — optional parallel execution via `optimized(true)` + `maxprocs_set(N)`
+- **API** — covers matrix arithmetic, decompositions, FFT, random sampling, optimization, and OpenCV interop
+
+## Quick Start
 
 ```cpp
-#include "Numcpp.hpp"
-
-using namespace np;
-
-<<<<<<< HEAD
-=======
-// 复数，推荐使用C++的复数类型，支持FFT变换
-typedef std::complex<double> complex_double;
-
-#define nc_t complex_double
-
-nc_t sinxy(nc_t x, nc_t y)
-{
-    return nc_t(sin(x.real()), sin(x.imag()));
-}
-
-void generate(Numcpp<nc_t> &nc)
-{
-    srand(time(NULL));
-    for (size_t i = 0; i < nc.row; i++)
-    {
-        for (size_t j = 0; j < nc.col; j++)
-        {
-            double U1 = rand() * 1.0f / RAND_MAX;                // 0~1均匀分布
-            double U2 = rand() * 1.0f / RAND_MAX;                // 0~1均匀分布
-            double Z = sqrt(-2 * log(U1)) * cos(2 * NP_PI * U2); // 标准正态分布
-            // 期望为1，方差为3^2的正态分布
-            nc[i][j] *= 1 + 3 * Z;
-        }
-    }
-}
-
-nc_t func(nc_t n, nc_t m)
-{
-    nc_t result = n * m;
-    return result;
-}
-nc_t sigmoid(nc_t n, nc_t m)
-{
-    return nc_t(1, 0) / (nc_t(1, 0) + exp(-n));
-}
-
-int main(int argc, char const *argv[])
-{
-    // 开启多核优化
-    np::is_optimized = true;
-    /*使用Numcpp<type> np(row,col)创建一个row * col的矩阵*/
-    Numcpp<nc_t> n(16, 16), m(16, 16);
-
-    /*矩阵中所有元素的默认值为1，也可以手动设置*/
-    Numcpp<nc_t> c(6, 7, 3.0);
-    Numcpp<nc_t> e(6, 8);
-
-    /*广播操作*/
-    n *= 2.0;
-    m *= 3.0;
-
-    try
-    {
-
-        // 矩阵乘法：
-        Numcpp<nc_t> result = n * m;
-        std::cout << "n * m:" << result << "\n";
-
-        // 使用矩阵乘法优化算法，在M*K*N >64*64*64时生效,对特殊乘法无效;
-
-        // 矩阵运算：
-        result = n + m;
-        std::cout << "n + m:" << result << "\n";
-        // 哈达马乘积：
-        result = n.Hadamard(m);
-        std::cout << "n (h*) m:" << result << "\n";
-
-        // 生成正态分布的矩阵
-        generate(c);
-        generate(e);
-        std::cout << c << "\n";
-        std::cout << e << "\n";
-        // 矩阵转置：
-        c.transposed();
-        std::cout << "c transposed:" << c << "\n";
-
-        // 矩阵的特殊乘法：
-        Numcpp<nc_t> Out = c<func> e; // 会创建一个新的矩阵
-        std::cout << "Out:" << Out << "\n";
-
-        // 函数数乘特殊乘法：
-        Numcpp<nc_t> act = result<sigmoid> NULL;
-        std::cout << "act:" << act << "\n";
-
-        // 矩阵fft
-        std::cout << "RAW:" << result << "\n";
-        result.ffted(1);
-        std::cout << "FFT:" << result << "\n";
-        // ifft
-        result.ffted(-1);
-        std::cout << "iFFT" << result << "\n";
-        // 保存矩阵
-        Out.save("mat");
-        // 读取矩阵
-        Numcpp<nc_t> temp = load<nc_t>("mat");
-        std::cout << "temp load in Out:" << temp << "\n";
-
-        // 流式创建一个方阵
-        Numcpp<int> mat(3, 3);
-        mat << 4, 1, 1,
-            1, 3, 2,
-            1, 2, 5;
-
-        // 方阵的逆、行列式
-        std::cout << "mat:" << mat << "\n";
-        std::cout << "mat's sum:" << mat.sum() << "\n";
-        std::cout << "mat Determinant value:" << mat.determinant() << "\n";
-        std::cout << "mat Inverse mat:" << mat.inverse() << "\n";
-
-        // 直接赋值式流
-        Numcpp<double> nmat = (Numcpp<double>(4, 3) << 4, 1, 1, 1,
-                               3, 2, 1, 2,
-                               5, 5, 1, 1);
-        // 矩阵阵的逆
-        std::cout << "nmat:" << nmat << "\n";
-        std::cout << "nmat pseudoinverse mat:" << nmat.pseudoinverse() << "\n";
-        std::cout << "nmat[0:]:" << nmat.srow(0) << std::endl;
-        std::cout << "nmat[:2]:" << nmat.scol(2) << std::endl;
-
-        Numcpp<double> U, S, V;
-        nmat.svd(U, S, V);
-
-        std::cout << "SVD_U:" << U << "\n";
-        std::cout << "SVD_S:" << S << "\n";
-        std::cout << "SVD_V:" << V << "\n";
-        std::cout << "rebuild nmat:" << U * S * V.transpose() << "\n";
-
-        // lambda支持
-        std::cout << "<lambda>:" << (temp<[](nc_t x, nc_t y) -> nc_t
-                                          { return nc_t(sin(x.real()), sin(x.imag())); }>
-                                         NULL)
-                  << std::endl;
-        std::cout << "<func>:" << (n<sinxy> NULL)
-                  << std::endl;
-
-        // 生成高斯矩阵基本用法
-        auto gmat = np::randn<double>(100, 100); // 100x100标准高斯矩阵
-
-        // 自定义参数
-        np::GaussianConfig config;
-        config.mean = 5.0;
-        config.stddev = 2.0;
-        config.seed = 12345;
-        auto custom_mat = np::randn<double>(50, 50, config);
-
-        // 多线程生成大矩阵
-        auto big_mat = np::randn_parallel<double>(1000, 1000, config, 8);
-
-        // 多变量高斯
-        np::Numcpp<double> cov(2, 2);
-        cov << 1.0, 0.8, 0.8, 1.0;
-        auto multi_mat = np::multivariate_randn<double>(1000, cov);
-
-        // 向量的点积
-        Numcpp<int> v1(1, 9), v2(9, 1, 8);
-        std::cout << "Dot: " << v1.dot(v1) << std::endl;
-
-        // 范数计算
-        auto normat = np::randn<double>(16, 16);
-        std::cout << "normat: " << normat << std::endl;
-        std::cout << "normat's L1: " << normat.norm(np::L1) << std::endl;
-        std::cout << "normat's L2: " << normat.norm(np::L2) << std::endl;
-        std::cout << "normat's INF: " << normat.norm(np::INF) << std::endl;
-    }
-    catch (const std::exception &e)
-    {
-        std::cerr << e.what() << '\n';
-    }
-    return 0;
-}
-
-```
-
-# **矩阵的运算**
-
-### 下面是支持的操纵符的类型
-
-```c++
-Numcpp<typename> nc(4, 4),matrix(4,4);
-```
-
-### 赋值运算符
-
-```c++
-//矩阵简单运算的赋值运算
-nc += matrix;
-nc -= matrix;
-nc = matrix;
-//矩阵数乘广播的赋值运算
-nc *= number//number为一个数值
-nc += number
-nc -= number
-nc /= number
-nc + number -> Numcpp
-nc - number -> Numcpp
-nc * number -> Numcpp
-nc / number -> Numcpp
-```
-
-### 矩阵的基本运算
-
-```c++
-Numcpp<typename> result = nc + matrix;
-Numcpp<typename> result = nc - matrix;
-
-Numcpp<typename> result = nc * number;//数乘
-Numcpp<typename> result = nc * matrix;//矩阵乘法
-```
-
-### 解矩阵运算
-
-```c++
-typename data = nc[x][y];//下标访问
-nc.srow(index) -> Numcpp //行提取
-nc.scol(index) -> Numcpp //列提取
-```
-
-### 矩阵的哈达马乘积（Hadamard product）
-
-```c++
-//哈达马乘积的基本运算
-Numcpp<typename> result = nc.Hadamard(matrix);
-//哈达马乘积的赋值运算
-nc.Hadamard_self(matrix);
-```
-
-### 矩阵的置转运算
-
-```c++
-//获取矩阵的转置
-Numcpp<typename> result = nc.transpose();
-//转置矩阵
-nc.transposed();
-```
-
-## 方阵的逆以及矩形矩阵的伪逆
-
-```c++
-// 流式创建一个方阵
-Numcpp<nc_t> mat(3, 3);
-mat << 1, 2, 3, 4, 5, 6, 7, 8, 9;
-
-// 方阵的逆
-mat.inverse() -> Numcpp
-
-// 矩阵的逆
-Numcpp<nc_t> nmat(4, 3);
-nmat << 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12;
-nmat.pseudoinverse() -> Numcpp
-```
-
-## 方阵的行列式计算
-
-```c++
-mat.determinant() -> Number
-```
-
-### 矩阵的特殊乘法
-
-```c++
-Numcpp<nc_t> Out = c<func> e; // 会创建一个新的矩阵
-```
-
-### 函数数乘特殊乘法
-
-```c++
-Numcpp<nc_t> act = result<sigmoid> NULL;
-```
-
-### FFT（只对复数矩阵有效）
-
-```c++
-// 矩阵fft
-result.ffted(1);
-// ifft
-result.ffted(-1);
-```
-
-### **启用矩阵乘法优化算法和CPU多核优化加速计算**
-
-```c++
-//默认同时开启矩阵乘法优化算法和CPU多核优化加速计算
-nc.optimized(true);
-//设置最大并发数
-nc.maxprocs_set(thread_num);
-```
-
-值得一提的是：
-
-```c++
-if (sqrt(thread_num) * sqrt(thread_num) > std::thread::hardware_concurrency() || thread_num < 1)
-{
- throw std::invalid_argument("Invalid maxprocs");
-}
-```
-
-如果最大并发数大于CPU的最大线程数优化将毫无意义，我们禁止这种行为。同时根据约定，当`thread_num`的值为一个可开方数，同时能够和矩阵的形状成几何倍数关系，此时优化效果最佳。同时，如果`nc.row/sqrt(thread_num)`或`nc.col/sqrt(thread_num)`不为整数，则可能存在分块缺陷。看起来像这样：
-
-```
-(16,8)[
-    [0][(2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (1,0) , (1,0)]
-    [1][(2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (1,0) , (1,0)]
-    [2][(2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (1,0) , (1,0)]
-    [3][(2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (1,0) , (1,0)]
-    [4][(2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (1,0) , (1,0)]
-    [5][(2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (1,0) , (1,0)]
-    [6][(2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (1,0) , (1,0)]
-    [7][(2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (1,0) , (1,0)]
-    [8][(2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (1,0) , (1,0)]
-    [9][(2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (1,0) , (1,0)]
-    [10][(2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (1,0) , (1,0)]
-    [11][(2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (1,0) , (1,0)]
-    [12][(2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (1,0) , (1,0)]
-    [13][(2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (1,0) , (1,0)]
-    [14][(2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (2,0) , (1,0) , (1,0)]
-    [15][(1,0) , (1,0) , (1,0) , (1,0) , (1,0) , (1,0) , (1,0) , (1,0)]
-]
-```
-
-正常被处理的输出值应该为2，这是由于分块算法无法切割残块导致的，所以应该确保矩阵可以被分割为N个正方形大小的矩阵，如此可以保证效率与数据安全。
-
-关于矩阵乘法的优化算法，则是采用了Coppersmith和Winograd在1990年由Strassen算法改进而来的Coppersmith-Winograd算法：论文地址：[107.pdf](https://eprint.iacr.org/2013/107.pdf)
-
-```c++
-/*
- The mathematical principles mentioned in the paper:
-     * this_matrix A_row * A_col
-     * other_matrix A_col * B_col
-     * result A_row * B_col
-     * result = this_matrix * other_matrix
-     * S1 = A21 + A22     T1 = B12 - B11
-     * S2 = S1 - A11      T2 = B22 - T1
-     * S3 = A11 - A21     T3 = B22 - B12
-     * S4 = A12 - S2      T4 = T2 - B21
-     * M1 = A11 * B11     U1 = M1 + M2
-     * M2 = A12 * B21     U2 = M1 + M6
-     * M3 = S4 * B22      U3 = U2 + M7
-     * M4 = A22 * T4      U4 = U2 + M5
-     * M5 = S1 * T1       U5 = U4 + M3
-     * M6 = S2 * T2       U6 = U3 - U4
-     * M7 = S3 * T3       U7 = U3 + M5
-     * C11 = U1
-     * C12 = U5
-     * C21 = U6
-     * C22 = U7
-*/
-```
-
-### 矩阵有关的实用工具
-
-```c++
-// 创建矩阵
-np::Numcpp<int> mat(4, 5);
-mat << 1, 1, 0, 1, 0,
-       1, 1, 1, 1, 1,
-       1, 1, 1, 1, 1,
-       1, 0, 1, 1, 0;
-
-// 查找最大矩形
-np::Rectangle rect = np::findMaximalRectangle(mat);
-std::cout << "最大矩形: " << rect.area << " 面积" << std::endl;
-
-// 基本用法
-auto mat = np::randn<double>(100, 100);  // 100x100标准高斯矩阵
-
-// 自定义参数
-np::GaussianConfig config;
-config.mean = 5.0;
-config.stddev = 2.0;
-config.seed = 12345;
-auto custom_mat = np::randn<double>(50, 50, config);
-
-// 多线程生成大矩阵
-auto big_mat = np::randn_parallel<double>(1000, 1000, config, 8);
-
-// 多变量高斯
-np::Numcpp<double> cov(2, 2);
-cov << 1.0, 0.8, 0.8, 1.0;
-auto multi_mat = np::multivariate_randn<double>(1000, cov);
-
-```
-
-
-
-# 对Nvidia GPU的CUDA加速支持
-
-提供所有基础操作的CUDA加速，同时基于性能考量，内存自动同步默认为关，在**完成所有运算后**应**手动同步数据**回主机。
-
-```c++
 #include <iostream>
-#include "Numcpp.hpp"
-
+#include "Numcpp/Numcpp.hpp"
 using namespace np;
-#define nc_t double
->>>>>>> ba984c9bca88375fd70002cc78fce1a7188e962d
-int main()
-{
-    Numcpp<double> n(16, 16, 2.0);
-    Numcpp<double> m(16, 16, 3.0);
 
-<<<<<<< HEAD
-    auto result = n * m;
-    std::cout << result << std::endl;
-=======
-    // 在GPU上操作
-    n *= 2.0; // 广播操作
-    m *= 3.0;
-    n += 4;
-    m -= 6;
-    n /= 8;
-    m /= 12;
+int main() {
+    // Two ways to initialize
+    Numcpp<double> a(2, 3, 1.0);               // 2x3, all ones
+    auto b = (Numcpp<double>(2, 2) << 1, 2,     // 2x2
+                                          3, 4);
 
-    // 同步回CPU查看结果
-    n.to(DEVICE_LOCAL);
-    m.to(DEVICE_LOCAL);
-    std::cout << n;
-    std::cout << m;
+    // Arithmetic
+    auto c = a + b;         // matrix addition
+    auto d = a * 2.0;       // scalar multiplication
+    auto e = a.transpose(); // transpose
+    auto f = a.Hadamard(a); // element-wise product
 
-    // GPU加速的矩阵乘法（无优化算法）
-    Numcpp<nc_t> result = n * m;
-    result.to(DEVICE_LOCAL);
-    std::cout << result;
+    // Matrix multiply
+    auto g = (Numcpp<double>(2, 3) << 1, 2, 3, 4, 5, 6)
+           * (Numcpp<double>(3, 2) << 7, 8, 9, 10, 11, 12);
 
-    // 本位减法
-    n -= m;
-    n.to(DEVICE_LOCAL);
-    std::cout << n;
+    // Decompositions
+    double det = b.determinant();
+    auto inv = b.inverse();
 
-    // 同位广播 & 开启自动同步(默认关闭状态，避免运算期间反复拷贝内存)
-    n.auto_sync = true;
-    std::cout << (n - 10) / 8.0 * 5 + 3 - 2 * 4 / 2 + 1 << std::endl;
->>>>>>> ba984c9bca88375fd70002cc78fce1a7188e962d
+    // SVD
+    Numcpp<double> U, S, V;
+    a.svd(U, S, V);
+
+    // Access elements
+    double x = a[0][1];
+
+    // Print
+    std::cout << a << std::endl;
+
     return 0;
 }
 ```
 
-编译：`g++ -std=c++20 example.cpp -o example`
+Compile with C++17 or later:
 
----
-
-## 模块化引入
-
-支持按需引入子模块，降低编译依赖：
-
-```cpp
-// 仅需核心矩阵功能
-#include "Numcpp/core.hpp"
-
-// 需要高斯随机数生成
-#include "Numcpp/random.hpp"
-
-// 需要 LQR / QP 优化求解器
-#include "Numcpp/optim.hpp"
-
-// 需要 OpenCV 互操作（需已安装 OpenCV）
-#include "Numcpp/opencv.hpp"
-
-// 引入全部模块
-#include "Numcpp.hpp"
+```bash
+g++ -std=c++17 -O2 main.cpp -o main
 ```
 
----
+## API Reference
 
-## 创建矩阵
+### Construction & Assignment
 
-```cpp
-Numcpp<double> a(3, 4);           // 3x4, 元素默认 0
-Numcpp<double> b(3, 4, 5.0);      // 3x4, 元素默认 5.0
-Numcpp<double> c(a);              // 拷贝构造
+| Expression | Description |
+|---|---|
+| `Numcpp<T> M(rows, cols)` | Zero-initialized matrix |
+| `Numcpp<T> M(rows, cols, val)` | Matrix filled with `val` |
+| `Numcpp<T> M(T**, rows, cols)` | From raw 2D array (copies data) |
+| `Numcpp<T> M(T*, rows, cols)` | From flat array (copies data) |
+| `Numcpp<T> M("file.mat")` | Load from binary file |
+| `M << v1, v2, v3, ...` | Stream initializer (row-major) |
+| `M = other` | Deep copy |
 
-double  data[] = {1,2,3,4,5,6};
-Numcpp<double> d(data, 2, 3);     // 从一维数组
+### Element Access
 
-// 流式初始化
-Numcpp<double> e(3, 3);
-e << 4, 1, 1,
-     1, 3, 2,
-     1, 2, 5;
-```
+| Expression | Description |
+|---|---|
+| `M[i][j]` | Access element at row `i`, column `j` |
+| `M.srow(i)` | Extract single row as 1xN matrix |
+| `M.scol(j)` | Extract single column as Mx1 matrix |
 
----
+### Matrix Arithmetic
 
-## 算术运算
+| Expression | Description |
+|---|---|
+| `A + B`, `A += B` | Element-wise addition |
+| `A - B`, `A -= B` | Element-wise subtraction |
+| `A * B` | Matrix multiplication |
+| `A * s`, `s * A`, `A *= s` | Scalar multiplication |
+| `A / s`, `A /= s` | Scalar division |
+| `A + s`, `A += s` | Add scalar to each element |
+| `A - s`, `A -= s` | Subtract scalar from each element |
+| `A.Hadamard(B)` | Element-wise (Hadamard) product |
+| `A.Hadamard_self(B)` | In-place Hadamard product |
 
-```cpp
-Numcpp<double> a(4, 4), b(4, 4);
+### Matrix Properties & Transforms
 
-// 矩阵运算
-auto s = a + b;
-auto d = a - b;
-auto m = a * b;          // 标准矩阵乘法
+| Expression | Description |
+|---|---|
+| `M.transpose()` | Return transposed copy |
+| `M.transposed()` | Transpose in-place |
+| `M.sum()` | Sum of all elements |
+| `M.norm(type)` | Norm: `L1`, `L2`, or `INF` |
+| `M.dot(v)` | Dot product of two vectors |
+| `M.is_vector()` | Check if matrix is a vector |
+| `M.size()` | `row * col` |
+| `M.is_symmetric()` | Check symmetry |
+| `M.set_identity()` | Set to identity matrix (must be square) |
+| `M.zero_approximation(tol)` | Set values below tolerance to zero |
 
-// 数乘运算
-auto x = a * 3.0;
-auto y = a / 2.0;
-auto z = a + 1.0;
+### Linear Algebra
 
-// 原位运算
-a += b;  a -= b;
-a *= 2;  a /= 2;  a += 1;  a -= 1;
-```
+| Expression | Description |
+|---|---|
+| `M.determinant()` | Determinant (square matrices) |
+| `M.inverse()` | Matrix inverse (square, non-singular) |
+| `M.pseudoinverse()` | Moore-Penrose pseudoinverse |
+| `M.eig(max_iter, tol)` | Eigen-decomposition (symmetric) — returns `{eigenvalues, eigenvectors, diagonal}` |
+| `M.svd(U, S, V)` | SVD via eigen-decomposition — returns `U * S * V^T = M` |
 
----
-
-## 索引与提取
-
-```cpp
-auto v  = a[2][3];        // 下标访问
-auto r  = a.srow(0);      // 提取第 0 行，返回 1×n 矩阵
-auto c  = a.scol(1);      // 提取第 1 列，返回 m×1 矩阵
-bool iv = a.is_vector();   // 是否向量
-size_t sz = a.size();      // 元素总数
-auto s  = a.sum();         // 元素求和
-```
-
----
-
-## 哈达马乘积 (Hadamard)
-
-```cpp
-auto h = a.Hadamard(b);        // 返回新矩阵
-a.Hadamard_self(b);            // 原位
-```
-
----
-
-## 转置
+### FFT
 
 ```cpp
-auto t = a.transpose();       // 返回新矩阵
-a.transposed();               // 原位转置
+// Complex FFT
+Numcpp<std::complex<double>> c(1, 8);
+auto freq = c.fft(1);   // forward FFT
+auto time = c.fft(-1);  // inverse FFT
+
+// Real-to-complex FFT
+Numcpp<double> r(1, 8);
+auto freq_cpx = r.fft(1);   // returns Numcpp<std::complex<double>>
 ```
 
----
-
-## 特殊乘法
+### Type Conversion
 
 ```cpp
-// 二元函数乘法: C[i][j] = sum_k func(A[i][k], B[k][j])
-double mul(double x, double y) { return x * y; }
-auto out = a <mul> b;
-
-// 一元函数映射: 对每个元素调用 func
-double sigmoid(double x, double) { return 1.0 / (1.0 + exp(-x)); }
-auto act = a <sigmoid> NULL;
-
-// C++20 lambda 映射
-auto r = a <[](double x, double y) { return x * 2; }> nullptr;
+Numcpp<int> a(2, 2, 42);
+auto f = a.as<float>();    // Numcpp<float>
+auto d = a.as<double>();   // Numcpp<double>
+auto c = a.as<std::complex<double>>();  // converts to complex type
 ```
 
----
-
-## 行列式 / 逆矩阵 / 伪逆
+### Special Function Multiply (Lambda Map)
 
 ```cpp
-double det = mat.determinant();         // 行列式
-auto inv   = mat.inverse();             // 逆矩阵（方阵）
-auto pinv  = mat.pseudoinverse();       // 伪逆 (Moore-Penrose)
+// Element-wise lambda
+auto r = a < [](double x, double y) { return x * 2; } > nullptr;
+
+// Matrix-multiply style with bilateral function
+auto r2 = a < [](double x, double y) { return x + y; } > b;
 ```
 
----
-
-## SVD（奇异值分解）
+### File I/O
 
 ```cpp
-Numcpp<double> U, S, V;
-nmat.svd(U, S, V);                        // 引用方式
-auto rebuilt = U * S * V.transpose();     // 可重建成原矩阵
-
-auto svd_rst = nmat.svd();                // 返回 {U, S, V}
+M.save("matrix.mat");
+auto M2 = load<double>("matrix.mat");
 ```
 
----
-
-## 特征值与特征向量
+### Random & Distributions
 
 ```cpp
-auto r = mat.eig();              // {特征值, 特征向量矩阵, 对角矩阵}
-// 仅支持对称矩阵, QR 迭代法
+// Standard normal
+auto g = randn<double>(100, 100);
+
+// Configured normal
+GaussianConfig cfg{ .mean = 3.0, .stddev = 0.5, .seed = 42 };
+auto gc = randn<double>(50, 50, cfg);
+
+// Box-Muller generator
+auto bm = randn<double>(100, 100, cfg, true);
+
+// Parallel random
+auto gp = randn_parallel<double>(100, 100, cfg, 8);
+
+// Multivariate normal
+Numcpp<double> cov = (Numcpp<double>(3, 3) << 4, 1, 1, 1, 3, 2, 1, 2, 5);
+Numcpp<double> mean(1, 3, 0.0);
+auto samples = multivariate_randn(1000, cov, mean);
+
+// Gaussian mixture
+std::vector<GaussianConfig> components = {
+    { .mean =  -2.0, .stddev = 0.5, .seed = 1 },
+    { .mean =   2.0, .stddev = 0.5, .seed = 2 }
+};
+auto mixture = gaussian_mixture<double>(500, 500, components);
 ```
 
----
-
-## 范数与点积
+### Cholesky Decomposition
 
 ```cpp
-auto l1 = mat.norm(np::L1);        // L1 范数（列和最大）
-auto l2 = mat.norm(np::L2);        // L2 / Frobenius 范数
-auto inf= mat.norm(np::INF);       // 无穷范数（行和最大）
-auto d  = v1.dot(v2);              // 向量点积
+Numcpp<double> A = (Numcpp<double>(3, 3) << 4, 1, 1, 1, 3, 2, 1, 2, 5);
+auto L = cholesky_decomposition(A);  // L * L^T = A
 ```
 
----
+### Optimization
 
-## FFT / IFFT
+**LQR (Linear Quadratic Regulator)**
 
 ```cpp
-// 复数矩阵
-Numcpp<complex<double>> nc(16, 16);
-auto f = nc.fft(1);             // 正向 FFT, 返回复数矩阵
-auto g = f.fft(-1);             // 逆向 (含 1/N 归一化)
-nc.ffted(1);                    // 原位 FFT（仅复数类型）
-
-// 实数矩阵 — 自动转为复数返回
-Numcpp<double> rn(16, 16);
-auto cplx = rn.fft(1);         // 返回 Numcpp<complex<double>>
-// 不支持实数矩阵原位 FFT — 请用 fft() 替代
+auto [K, P] = solve_lqr(A, B, Q, R, max_iter, tolerance);
+// Returns optimal gain K and cost-to-go P
 ```
 
----
-
-## 类型转换 `.as<>()`
-
-所有数值类型可互转：
+**QP (Quadratic Programming)**
 
 ```cpp
-Numcpp<int>     imat(3, 3, 42);
-auto fmat = imat.as<float>();                       // int → float
-auto dmat = fmat.as<double>();                      // float → double
-auto i8   = dmat.as<int8_t>();                      // double → int8_t
-auto cmat = imat.as<std::complex<double>>();         // int → complex
+// minimize   0.5 * x^T * Q * x + c^T * x
+// subject to A * x <= b,  E * x == d
+auto x = solve_QP(Q, c, A, b, E, d);
 ```
 
----
+### OpenCV Interop
 
-## 实用工具
+`#include "Numcpp/opencv.hpp"`
 
 ```cpp
-// 单位矩阵
-a.set_identity();
-auto I = a.identity();
-
-// 对称性检查
-bool sym = a.is_symmetric();
-
-// 零逼近（小于 tolerance 的元素置零）
-a.zero_approximation(1e-6);
-
-// 二值化
-auto binary = binarizeMatrix(a, 0.5);
-
-// Cholesky 分解 L*L^T = A
-auto L = cholesky_decomposition(A);
+cv::Mat cvMat = ...;
+auto numMat = fromCvMat<double>(cvMat);
+auto back = toCvMat(numMat);
 ```
 
----
+### Multi-threading
 
-## 高斯随机矩阵
+A global thread pool (lazy-init, RAII-managed) is used internally. Workers persist across operations, avoiding per-call thread creation overhead.
 
 ```cpp
-auto gmat = randn<double>(100, 100);
-
-GaussianConfig cfg{ .mean = 5.0, .stddev = 2.0, .seed = 12345 };
-auto cmat = randn<double>(50, 50, cfg);
-
-// 多线程生成
-auto big = randn_parallel<double>(1000, 1000, cfg, 8);
-
-// 多变量高斯
-Numcpp<double> cov(2, 2);
-cov << 1.0, 0.8, 0.8, 1.0;
-auto multi = multivariate_randn<double>(1000, cov);
-
-// 混合高斯
-auto mix = gaussian_mixture<double>(100, 100,
-    {{.mean=0, .stddev=1}, {.mean=5, .stddev=0.5}});
+auto M = Numcpp<double>(1000, 1000);
+M.optimized(true);          // enable parallel execution
+M.maxprocs_set(8);          // set thread count
+// All subsequent operations use the thread pool
 ```
 
----
-
-## LQR / QP 优化求解器
+### Utility
 
 ```cpp
-// LQR（离散 Riccati 方程迭代求解）
-auto [K, P] = solve_lqr(A, B, Q, R);
-
-// QP（原-对偶法，支持等式/不等式约束）
-auto x_opt = solve_QP(Q_mat, C, A, b, E, d);
+auto bin = binarizeMatrix(A, 0.5);  // threshold binarization
 ```
 
----
+### Algorithm Library
 
-## 嵌套矩阵
-
-支持 `Numcpp<Numcpp<T>>`（矩阵元素为矩阵），所有运算符自动适配：
+`#include "Numcpp/algos/algos.hpp"` (or include individual headers)
 
 ```cpp
-Numcpp<Numcpp<double>> nm(1, 1, Numcpp<double>(3, 2, 1.0));
-auto mm = nm * nm;         // 内层矩阵乘法 + 外层矩阵乘法
-auto ss = nm.sum();        // 内层矩阵逐元素求和
+#include "Numcpp/algos/algos.hpp"
+
+// Coppersmith-Winograd — O(n^2.807) recursive, best serial perf at N >= 128
+auto C = cw_multiply(A, B);
+
+// Cache-blocked — tiled multiplication, optional thread parallelism
+auto D = blocked_multiply(A, B, 64, 0);   // serial, 64×64 tiles
+auto E = blocked_multiply(A, B, 64, 8);   // parallel, 8 threads
 ```
 
----
-
-## 多核优化
-
-```cpp
-nc.optimized(true);                      // 开启多线程加速
-nc.maxprocs_set(4);                      // 设置线程数（需为完全平方数）
-```
-
-线程数必须 ≤ `hardware_concurrency()`。矩阵乘法在 M×K×N > 64³ 且维度为偶数时自动启用 Coppersmith-Winograd 算法。
-
----
-
-## OpenCV 互操作
-
-需安装 OpenCV，单独引入 `Numcpp/opencv.hpp`：
-
-```cpp
-#include "Numcpp/opencv.hpp"
-
-cv::Mat img = cv::imread("image.png", cv::IMREAD_GRAYSCALE);
-auto nm = np::fromCvMat<uint8_t>(img);    // cv::Mat → Numcpp
-cv::Mat result = np::toCvMat(nm);         // Numcpp → cv::Mat
-```
-
----
-
-## 保存与加载
-
-```cpp
-mat.save("matrix.bin");
-auto loaded = np::load<double>("matrix.bin");
-```
-
----
-
-## 文件结构
+## File Structure
 
 ```
 Numcpp/
-├── Numcpp.hpp          # 兼容头（#include "Numcpp/Numcpp.hpp"）
-└── Numcpp/
-    ├── Numcpp.hpp      # 总引入（core + random + optim）
-    ├── core.hpp        # 核心矩阵类 + 线性代数 + FFT
-    ├── random.hpp      # 高斯随机数生成 + Cholesky
-    ├── optim.hpp       # LQR + QP 求解器
-    └── opencv.hpp      # OpenCV 互操作（fromCvMat / toCvMat）
+├── Numcpp.hpp          Main include header
+├── core.hpp            Core matrix class, arithmetic, linear algebra, FFT
+├── random.hpp          Gaussian random, Cholesky, multivariate, mixtures
+├── optim.hpp           LQR and QP solvers
+├── opencv.hpp          OpenCV cv::Mat conversion
+└── algos/
+    ├── algos.hpp       Single include for all algorithms
+    ├── cw_mmul.hpp     Coppersmith-Winograd multiplication
+    └── blocked_mmul.hpp  Cache-blocked multiplication
 ```
 
----
+## Benchmark
 
-## 授权
+Tests run on a 20-core CPU with `example.cpp`. All times averaged over multiple iterations.
+
+### Element-wise operations (1500×1500, 2.25M elements)
+
+| Operation | 1-core | 4-core | Speedup | 20-core | Speedup |
+|---|---|---|---|---|---|
+| construct | 7.7ms | 7.4ms | 1.05x | 7.0ms | 1.10x |
+| operator+= | 16.4ms | 17.4ms | 0.94x | 15.4ms | 1.07x |
+| operator*= | 7.4ms | 10.1ms | 0.73x | 9.7ms | 0.76x |
+| Hadamard | 18.1ms | 19.1ms | 0.95x | 16.4ms | 1.10x |
+| transpose | 20.7ms | 20.4ms | 1.02x | 17.4ms | 1.19x |
+| copy ctor | 14.1ms | 13.4ms | 1.05x | 12.7ms | 1.11x |
+| sum | 7.0ms | 7.4ms | 0.95x | 6.4ms | 1.11x |
+
+Element-wise operations are memory-bandwidth bound — threading provides marginal gains for O(n) operations on matrices of this size.
+
+### Matrix multiplication (400×400)
+
+| Operation | 1-core | 4-core | Speedup | 20-core | Speedup |
+|---|---|---|---|---|---|
+| A × B | 47.0ms | 13.4ms | 3.52x | 7.4ms | 6.41x |
+
+### Algorithm Comparison (square N×N power-of-2, 20 threads, block=64)
+
+| N | Naive | CW | Blk-serial | Blk-par | CW/Nai | Blk/Nai | BPar/Nai |
+|---|---|---|---|---|---|---|---|
+| 64 | 119μs | 118μs | 157μs | 342μs | 1.00x | 0.76x | 0.35x |
+| 128 | 1,230μs | 1,162μs | 1,476μs | 1,277μs | 1.05x | 0.83x | 0.96x |
+| 256 | 11,236μs | 9,311μs | 10,669μs | 7,355μs | 1.20x | 1.05x | 1.53x |
+| 512 | 95,866μs | 68,453μs | 81,442μs | 29,601μs | 1.40x | 1.18x | 3.24x |
+| 1024 | 1,184ms | — | 1,278ms | 242ms | — | 0.93x | 4.88x |
+
+- **CW** (`cw_multiply`): Best serial algorithm, 1.05–1.40x over naive. Strengthens with N.
+- **Blocked-serial** (`blocked_multiply` with threads=0): Cache-friendly tiling, modest gains from N≥256.
+- **Blocked-parallel** (`blocked_multiply` with threads=N): Combines cache blocking + thread pool. 3.24x at N=512, 4.88x at N=1024.
+
+## Requirements
+
+- C++17 or later (C++20 for `auto` lambda parameters)
+- OpenCV (optional, for `opencv.hpp`)
+
+## License
 
 MIT License
 
-作者：[yauntyour](https://github.com/yauntyour/)
+Copyright (c) 2024
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

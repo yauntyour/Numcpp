@@ -1,15 +1,15 @@
 # Numcpp
 
-A header-only, template-based C++ linear algebra and matrix computation library.
+纯头文件、模板化的 C++ 线性代数与矩阵计算库。
 
-## Features
+## 特性
 
-- **Header-only** — `#include "Numcpp/Numcpp.hpp"` and you're ready
-- **Template-based** — supports `float`, `double`, `int`, `std::complex`, and custom types
-- **Multi-threading** — optional parallel execution via `optimized(true)` + `maxprocs_set(N)`
-- **API** — covers matrix arithmetic, decompositions, FFT, random sampling, optimization, and OpenCV interop
+- **纯头文件** — `#include "Numcpp/Numcpp.hpp"` 即用
+- **模板化** — 支持 `float`、`double`、`int`、`std::complex` 及自定义类型
+- **多线程** — 通过 `optimized(true)` + `maxprocs_set(N)` 启用并行执行，内部使用全局线程池（延迟初始化、RAII 管理），工作线程跨操作复用
+- **丰富 API** — 矩阵运算、矩阵分解、FFT、随机采样、优化求解、OpenCV 互操作、算法扩展库
 
-## Quick Start
+## 快速开始
 
 ```cpp
 #include <iostream>
@@ -17,167 +17,167 @@ A header-only, template-based C++ linear algebra and matrix computation library.
 using namespace np;
 
 int main() {
-    // Two ways to initialize
-    Numcpp<double> a(2, 3, 1.0);               // 2x3, all ones
-    auto b = (Numcpp<double>(2, 2) << 1, 2,     // 2x2
+    // 两种构造方式
+    Numcpp<double> a(2, 3, 1.0);               // 2x3，全 1
+    auto b = (Numcpp<double>(2, 2) << 1, 2,     // 2x2 流式初始化
                                           3, 4);
 
-    // Arithmetic
-    auto c = a + b;         // matrix addition
-    auto d = a * 2.0;       // scalar multiplication
-    auto e = a.transpose(); // transpose
-    auto f = a.Hadamard(a); // element-wise product
+    // 算术运算
+    auto c = a + b;         // 矩阵加法
+    auto d = a * 2.0;       // 标量乘法
+    auto e = a.transpose(); // 转置
+    auto f = a.Hadamard(a); // Hadamard 逐元素乘积
 
-    // Matrix multiply
+    // 矩阵乘法
     auto g = (Numcpp<double>(2, 3) << 1, 2, 3, 4, 5, 6)
            * (Numcpp<double>(3, 2) << 7, 8, 9, 10, 11, 12);
 
-    // Decompositions
+    // 矩阵分解
     double det = b.determinant();
     auto inv = b.inverse();
 
-    // SVD
+    // 奇异值分解
     Numcpp<double> U, S, V;
     a.svd(U, S, V);
 
-    // Access elements
+    // 元素访问
     double x = a[0][1];
 
-    // Print
+    // 打印
     std::cout << a << std::endl;
 
     return 0;
 }
 ```
 
-Compile with C++17 or later:
+使用 C++17 或更高版本编译：
 
 ```bash
 g++ -std=c++17 -O2 main.cpp -o main
 ```
 
-## API Reference
+## API 参考
 
-### Construction & Assignment
+### 构造与赋值
 
-| Expression | Description |
+| 表达式 | 说明 |
 |---|---|
-| `Numcpp<T> M(rows, cols)` | Zero-initialized matrix |
-| `Numcpp<T> M(rows, cols, val)` | Matrix filled with `val` |
-| `Numcpp<T> M(T**, rows, cols)` | From raw 2D array (copies data) |
-| `Numcpp<T> M(T*, rows, cols)` | From flat array (copies data) |
-| `Numcpp<T> M("file.mat")` | Load from binary file |
-| `M << v1, v2, v3, ...` | Stream initializer (row-major) |
-| `M = other` | Deep copy |
+| `Numcpp<T> M(rows, cols)` | 零初始化矩阵 |
+| `Numcpp<T> M(rows, cols, val)` | 用 `val` 填充的矩阵 |
+| `Numcpp<T> M(T**, rows, cols)` | 从原始二维数组构造（深拷贝） |
+| `Numcpp<T> M(T*, rows, cols)` | 从一维数组构造（深拷贝） |
+| `Numcpp<T> M("file.mat")` | 从二进制文件加载 |
+| `M << v1, v2, v3, ...` | 流式初始化（行优先） |
+| `M = other` | 深拷贝赋值 |
 
-### Element Access
+### 元素访问
 
-| Expression | Description |
+| 表达式 | 说明 |
 |---|---|
-| `M[i][j]` | Access element at row `i`, column `j` |
-| `M.srow(i)` | Extract single row as 1xN matrix |
-| `M.scol(j)` | Extract single column as Mx1 matrix |
+| `M[i][j]` | 访问第 i 行、第 j 列元素 |
+| `M.srow(i)` | 提取单行，返回 1×N 矩阵 |
+| `M.scol(j)` | 提取单列，返回 M×1 矩阵 |
 
-### Matrix Arithmetic
+### 矩阵运算
 
-| Expression | Description |
+| 表达式 | 说明 |
 |---|---|
-| `A + B`, `A += B` | Element-wise addition |
-| `A - B`, `A -= B` | Element-wise subtraction |
-| `A * B` | Matrix multiplication |
-| `A * s`, `s * A`, `A *= s` | Scalar multiplication |
-| `A / s`, `A /= s` | Scalar division |
-| `A + s`, `A += s` | Add scalar to each element |
-| `A - s`, `A -= s` | Subtract scalar from each element |
-| `A.Hadamard(B)` | Element-wise (Hadamard) product |
-| `A.Hadamard_self(B)` | In-place Hadamard product |
+| `A + B`、`A += B` | 逐元素加法 |
+| `A - B`、`A -= B` | 逐元素减法 |
+| `A * B` | 矩阵乘法 |
+| `A * s`、`s * A`、`A *= s` | 标量乘法 |
+| `A / s`、`A /= s` | 标量除法 |
+| `A + s`、`A += s` | 每个元素加标量 |
+| `A - s`、`A -= s` | 每个元素减标量 |
+| `A.Hadamard(B)` | 逐元素（Hadamard）乘积 |
+| `A.Hadamard_self(B)` | 原地 Hadamard 乘积 |
 
-### Matrix Properties & Transforms
+### 矩阵属性与变换
 
-| Expression | Description |
+| 表达式 | 说明 |
 |---|---|
-| `M.transpose()` | Return transposed copy |
-| `M.transposed()` | Transpose in-place |
-| `M.sum()` | Sum of all elements |
-| `M.norm(type)` | Norm: `L1`, `L2`, or `INF` |
-| `M.dot(v)` | Dot product of two vectors |
-| `M.is_vector()` | Check if matrix is a vector |
-| `M.size()` | `row * col` |
-| `M.is_symmetric()` | Check symmetry |
-| `M.set_identity()` | Set to identity matrix (must be square) |
-| `M.zero_approximation(tol)` | Set values below tolerance to zero |
+| `M.transpose()` | 返回转置副本 |
+| `M.transposed()` | 原地转置 |
+| `M.sum()` | 所有元素求和 |
+| `M.norm(type)` | 范数：`L1`、`L2` 或 `INF` |
+| `M.dot(v)` | 两个向量的点积 |
+| `M.is_vector()` | 判断是否为向量 |
+| `M.size()` | 元素总数 `row * col` |
+| `M.is_symmetric()` | 判断是否对称 |
+| `M.set_identity()` | 设为单位矩阵（需为方阵） |
+| `M.zero_approximation(tol)` | 将小于容差的元素置零 |
 
-### Linear Algebra
+### 线性代数
 
-| Expression | Description |
+| 表达式 | 说明 |
 |---|---|
-| `M.determinant()` | Determinant (square matrices) |
-| `M.inverse()` | Matrix inverse (square, non-singular) |
-| `M.pseudoinverse()` | Moore-Penrose pseudoinverse |
-| `M.eig(max_iter, tol)` | Eigen-decomposition (symmetric) — returns `{eigenvalues, eigenvectors, diagonal}` |
-| `M.svd(U, S, V)` | SVD via eigen-decomposition — returns `U * S * V^T = M` |
+| `M.determinant()` | 行列式（方阵） |
+| `M.inverse()` | 矩阵逆（方阵，非奇异） |
+| `M.pseudoinverse()` | Moore-Penrose 伪逆 |
+| `M.eig(max_iter, tol)` | 特征分解（对称矩阵）— 返回 `{特征值, 特征向量, 对角矩阵}` |
+| `M.svd(U, S, V)` | 奇异值分解 — `U * S * V^T = M` |
 
-### FFT
+### FFT 快速傅里叶变换
 
 ```cpp
-// Complex FFT
+// 复 FFT
 Numcpp<std::complex<double>> c(1, 8);
-auto freq = c.fft(1);   // forward FFT
-auto time = c.fft(-1);  // inverse FFT
+auto freq = c.fft(1);   // 正变换
+auto time = c.fft(-1);  // 逆变换
 
-// Real-to-complex FFT
+// 实数到复数 FFT
 Numcpp<double> r(1, 8);
-auto freq_cpx = r.fft(1);   // returns Numcpp<std::complex<double>>
+auto freq_cpx = r.fft(1);   // 返回 Numcpp<std::complex<double>>
 ```
 
-### Type Conversion
+### 类型转换
 
 ```cpp
 Numcpp<int> a(2, 2, 42);
-auto f = a.as<float>();    // Numcpp<float>
-auto d = a.as<double>();   // Numcpp<double>
-auto c = a.as<std::complex<double>>();  // converts to complex type
+auto f = a.as<float>();                 // → Numcpp<float>
+auto d = a.as<double>();                // → Numcpp<double>
+auto c = a.as<std::complex<double>>();  // → 复数类型
 ```
 
-### Special Function Multiply (Lambda Map)
+### Lambda 函数映射
 
 ```cpp
-// Element-wise lambda
+// 逐元素 lambda 映射
 auto r = a < [](double x, double y) { return x * 2; } > nullptr;
 
-// Matrix-multiply style with bilateral function
+// 矩阵乘法风格的二元函数映射
 auto r2 = a < [](double x, double y) { return x + y; } > b;
 ```
 
-### File I/O
+### 文件读写
 
 ```cpp
 M.save("matrix.mat");
 auto M2 = load<double>("matrix.mat");
 ```
 
-### Random & Distributions
+### 随机与分布
 
 ```cpp
-// Standard normal
+// 标准正态分布
 auto g = randn<double>(100, 100);
 
-// Configured normal
+// 自定义参数正态分布
 GaussianConfig cfg{ .mean = 3.0, .stddev = 0.5, .seed = 42 };
 auto gc = randn<double>(50, 50, cfg);
 
-// Box-Muller generator
+// Box-Muller 生成器
 auto bm = randn<double>(100, 100, cfg, true);
 
-// Parallel random
+// 并行随机生成
 auto gp = randn_parallel<double>(100, 100, cfg, 8);
 
-// Multivariate normal
+// 多元正态分布
 Numcpp<double> cov = (Numcpp<double>(3, 3) << 4, 1, 1, 1, 3, 2, 1, 2, 5);
 Numcpp<double> mean(1, 3, 0.0);
 auto samples = multivariate_randn(1000, cov, mean);
 
-// Gaussian mixture
+// 高斯混合模型
 std::vector<GaussianConfig> components = {
     { .mean =  -2.0, .stddev = 0.5, .seed = 1 },
     { .mean =   2.0, .stddev = 0.5, .seed = 2 }
@@ -185,31 +185,31 @@ std::vector<GaussianConfig> components = {
 auto mixture = gaussian_mixture<double>(500, 500, components);
 ```
 
-### Cholesky Decomposition
+### Cholesky 分解
 
 ```cpp
 Numcpp<double> A = (Numcpp<double>(3, 3) << 4, 1, 1, 1, 3, 2, 1, 2, 5);
 auto L = cholesky_decomposition(A);  // L * L^T = A
 ```
 
-### Optimization
+### 优化求解
 
-**LQR (Linear Quadratic Regulator)**
+**LQR（线性二次型调节器）**
 
 ```cpp
 auto [K, P] = solve_lqr(A, B, Q, R, max_iter, tolerance);
-// Returns optimal gain K and cost-to-go P
+// 返回最优增益 K 和代价矩阵 P
 ```
 
-**QP (Quadratic Programming)**
+**QP（二次规划）**
 
 ```cpp
-// minimize   0.5 * x^T * Q * x + c^T * x
-// subject to A * x <= b,  E * x == d
+// min  0.5 * x^T * Q * x + c^T * x
+// s.t. A * x <= b,  E * x == d
 auto x = solve_QP(Q, c, A, b, E, d);
 ```
 
-### OpenCV Interop
+### OpenCV 互操作
 
 `#include "Numcpp/opencv.hpp"`
 
@@ -219,60 +219,60 @@ auto numMat = fromCvMat<double>(cvMat);
 auto back = toCvMat(numMat);
 ```
 
-### Multi-threading
+### 多线程
 
-A global thread pool (lazy-init, RAII-managed) is used internally. Workers persist across operations, avoiding per-call thread creation overhead.
+内部使用全局线程池（延迟初始化、RAII 管理），工作线程跨操作复用，避免每次调用创建线程的开销。
 
 ```cpp
 auto M = Numcpp<double>(1000, 1000);
-M.optimized(true);          // enable parallel execution
-M.maxprocs_set(8);          // set thread count
-// All subsequent operations use the thread pool
+M.optimized(true);          // 启用并行执行
+M.maxprocs_set(8);          // 设置线程数
+// 后续所有操作均使用线程池
 ```
 
-### Utility
+### 工具函数
 
 ```cpp
-auto bin = binarizeMatrix(A, 0.5);  // threshold binarization
+auto bin = binarizeMatrix(A, 0.5);  // 阈值二值化
 ```
 
-### Algorithm Library
+### 算法扩展库
 
-`#include "Numcpp/algos/algos.hpp"` (or include individual headers)
+`#include "Numcpp/algos/algos.hpp"` （也可单独引入各头文件）
 
 ```cpp
 #include "Numcpp/algos/algos.hpp"
 
-// Coppersmith-Winograd — O(n^2.807) recursive, best serial perf at N >= 128
+// Coppersmith-Winograd — O(n^2.807) 递归算法，N >= 128 时串行最优
 auto C = cw_multiply(A, B);
 
-// Cache-blocked — tiled multiplication, optional thread parallelism
-auto D = blocked_multiply(A, B, 64, 0);   // serial, 64×64 tiles
-auto E = blocked_multiply(A, B, 64, 8);   // parallel, 8 threads
+// 分块乘法 — 缓存友好的瓦片化乘法，可选并行
+auto D = blocked_multiply(A, B, 64, 0);   // 串行，64×64 分块
+auto E = blocked_multiply(A, B, 64, 8);   // 并行，8 线程
 ```
 
-## File Structure
+## 文件结构
 
 ```
 Numcpp/
-├── Numcpp.hpp          Main include header
-├── core.hpp            Core matrix class, arithmetic, linear algebra, FFT
-├── random.hpp          Gaussian random, Cholesky, multivariate, mixtures
-├── optim.hpp           LQR and QP solvers
-├── opencv.hpp          OpenCV cv::Mat conversion
+├── Numcpp.hpp           主引入头文件
+├── core.hpp             核心矩阵类、算术运算、线性代数、FFT
+├── random.hpp           高斯随机、Cholesky 分解、多元分布、混合模型
+├── optim.hpp            LQR 与 QP 求解器
+├── opencv.hpp           OpenCV cv::Mat 互转
 └── algos/
-    ├── algos.hpp       Single include for all algorithms
-    ├── cw_mmul.hpp     Coppersmith-Winograd multiplication
-    └── blocked_mmul.hpp  Cache-blocked multiplication
+    ├── algos.hpp         算法库统一引入
+    ├── cw_mmul.hpp       Coppersmith-Winograd 乘法
+    └── blocked_mmul.hpp  缓存分块乘法
 ```
 
-## Benchmark
+## 性能基准
 
-Tests run on a 20-core CPU with `example.cpp`. All times averaged over multiple iterations.
+测试环境：20 核 CPU，使用 `example.cpp` 运行，取多次平均。
 
-### Element-wise operations (1500×1500, 2.25M elements)
+### 逐元素操作（1500×1500，225 万元素）
 
-| Operation | 1-core | 4-core | Speedup | 20-core | Speedup |
+| 操作 | 1 核 | 4 核 | 加速比 | 20 核 | 加速比 |
 |---|---|---|---|---|---|
 | construct | 7.7ms | 7.4ms | 1.05x | 7.0ms | 1.10x |
 | operator+= | 16.4ms | 17.4ms | 0.94x | 15.4ms | 1.07x |
@@ -282,17 +282,17 @@ Tests run on a 20-core CPU with `example.cpp`. All times averaged over multiple 
 | copy ctor | 14.1ms | 13.4ms | 1.05x | 12.7ms | 1.11x |
 | sum | 7.0ms | 7.4ms | 0.95x | 6.4ms | 1.11x |
 
-Element-wise operations are memory-bandwidth bound — threading provides marginal gains for O(n) operations on matrices of this size.
+逐元素操作受内存带宽限制 — 对 O(n) 级运算，多线程在此规模下仅提供边际收益。
 
-### Matrix multiplication (400×400)
+### 矩阵乘法（400×400）
 
-| Operation | 1-core | 4-core | Speedup | 20-core | Speedup |
+| 操作 | 1 核 | 4 核 | 加速比 | 20 核 | 加速比 |
 |---|---|---|---|---|---|
 | A × B | 47.0ms | 13.4ms | 3.52x | 7.4ms | 6.41x |
 
-### Algorithm Comparison (square N×N power-of-2, 20 threads, block=64)
+### 算法对比（方阵 N×N，2 的幂，20 线程，分块大小 64）
 
-| N | Naive | CW | Blk-serial | Blk-par | CW/Nai | Blk/Nai | BPar/Nai |
+| N | 朴素 | CW | 分块串行 | 分块并行 | CW/朴素 | 分块/朴素 | 并分/朴素 |
 |---|---|---|---|---|---|---|---|
 | 64 | 119μs | 118μs | 157μs | 342μs | 1.00x | 0.76x | 0.35x |
 | 128 | 1,230μs | 1,162μs | 1,476μs | 1,277μs | 1.05x | 0.83x | 0.96x |
@@ -300,35 +300,16 @@ Element-wise operations are memory-bandwidth bound — threading provides margin
 | 512 | 95,866μs | 68,453μs | 81,442μs | 29,601μs | 1.40x | 1.18x | 3.24x |
 | 1024 | 1,184ms | — | 1,278ms | 242ms | — | 0.93x | 4.88x |
 
-- **CW** (`cw_multiply`): Best serial algorithm, 1.05–1.40x over naive. Strengthens with N.
-- **Blocked-serial** (`blocked_multiply` with threads=0): Cache-friendly tiling, modest gains from N≥256.
-- **Blocked-parallel** (`blocked_multiply` with threads=N): Combines cache blocking + thread pool. 3.24x at N=512, 4.88x at N=1024.
+- **CW**（`cw_multiply`）：串行最优算法，相对朴素 1.05–1.40x，优势随 N 增长而扩大
+- **分块串行**（`blocked_multiply`，threads=0）：缓存友好的瓦片化，N≥256 后开始见效
+- **分块并行**（`blocked_multiply`，threads=N）：结合缓存分块与线程池，N=512 时 3.24x，N=1024 时 4.88x
 
-## Requirements
+## 依赖要求
 
-- C++17 or later (C++20 for `auto` lambda parameters)
-- OpenCV (optional, for `opencv.hpp`)
+- C++17 或更高（C++20 可启用 `auto` lambda 参数）
+- OpenCV（可选，仅 `opencv.hpp` 需要）
+- `algos/` 目录为独立可选模块，按需引入
 
-## License
+## 开源协议
 
-MIT License
-
-Copyright (c) 2024
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+本项目使用MIT开源协议
